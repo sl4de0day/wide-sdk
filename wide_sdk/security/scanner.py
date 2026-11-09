@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import List, Dict, Optional, Literal
 from ..types import Finding, ScanResult
 from .rules import SECURITY_RULES
+from .loader import RuleLoader
 
 EXTENSION_MAP: Dict[str, str] = {
     ".js": "js",
@@ -31,8 +32,10 @@ SEVERITY_RANKS = {
 }
 
 class SecurityScanner:
-    def __init__(self, workspace_dir: str = ".") -> None:
+    def __init__(self, workspace_dir: str = ".", rules_path: Optional[str] = None) -> None:
         self.workspace_dir = Path(workspace_dir).resolve()
+        self.rules_path = rules_path
+        self.rules = RuleLoader.load_rules(rules_path, self.workspace_dir)
 
     def scan(
         self,
@@ -66,7 +69,7 @@ class SecurityScanner:
 
                 lines = content.splitlines()
                 applicable_rules = [
-                    r for r in SECURITY_RULES
+                    r for r in self.rules
                     if "all" in r.languages or lang in r.languages
                 ]
 

@@ -1,3 +1,14 @@
+from .decision import (
+    CommitmentGate,
+    Commitment,
+    PluralityConsensus,
+    ClaimTable,
+    PartitionAssignment,
+    WeightedScorer,
+    Criterion,
+    SynchronizationBarrier,
+    BarrierBudget,
+)
 from .types import (
     ChatMessage,
     ToolCall,
@@ -27,10 +38,19 @@ from .providers import (
     DeepSeekProvider,
 )
 
-__version__ = "0.191126"
+__version__ = "0.291126"
 
 __all__ = [
     "Agent",
+    "CommitmentGate",
+    "Commitment",
+    "PluralityConsensus",
+    "ClaimTable",
+    "PartitionAssignment",
+    "WeightedScorer",
+    "Criterion",
+    "SynchronizationBarrier",
+    "BarrierBudget",
     "ContextManager",
     "SecurityScanner",
     "SecurityRule",

@@ -1,7 +1,8 @@
+import json
 import unittest
 import tempfile
 from pathlib import Path
-from wide_sdk.security import SecurityScanner
+from wide_sdk.security import SecurityScanner, RuleLoader
 
 class TestSecurityScanner(unittest.TestCase):
     def setUp(self) -> None:
@@ -32,6 +33,30 @@ class TestSecurityScanner(unittest.TestCase):
         res = scanner.scan(".", min_severity="ALL")
 
         self.assertEqual(len(res.findings), 0)
+
+    def test_custom_rules_loading(self) -> None:
+        custom_rules_file = self.root / "custom-rules.json"
+        custom_rules_file.write_text(json.dumps([
+            {
+                "id": "wide/custom-dangerous-sink",
+                "cwe": "CWE-999",
+                "category": "Custom Category",
+                "severity": "HIGH",
+                "languages": ["all"],
+                "pattern": "DANGEROUS_SINK\\(",
+                "message": "Custom sink used",
+                "remediation": "Do not call DANGEROUS_SINK"
+            }
+        ]), encoding="utf-8")
+
+        sample_file = self.root / "test.js"
+        sample_file.write_text('const res = DANGEROUS_SINK(foo);', encoding="utf-8")
+
+        scanner = SecurityScanner(str(self.root), rules_path=str(custom_rules_file))
+        res = scanner.scan(".", min_severity="ALL")
+
+        self.assertEqual(len(res.findings), 1)
+        self.assertEqual(res.findings[0].id, "wide/custom-dangerous-sink")
 
 if __name__ == "__main__":
     unittest.main()

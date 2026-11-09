@@ -1,10 +1,12 @@
 import os
+import json
 from typing import List, Dict, Optional, Callable, Any
 from .types import ChatMessage, ToolDefinition, ToolCall, ToolResult
 from .context import ContextManager
 from .providers.base import BaseProvider
 from .tools.base import BaseTool
 from .tools import DEFAULT_TOOLS
+from .decision import CommitmentGate
 
 DEFAULT_SYSTEM_PROMPT = """You are Wide Agent, an autonomous security-first AI coding and penetration testing assistant.
 You operate programmatically via Wide SDK.
@@ -60,6 +62,8 @@ class Agent:
 
         iteration = 0
         final_text = ""
+        gate = CommitmentGate(32, 0.0)
+        call_counts: Dict[str, int] = {}
 
         while iteration < self.max_iterations:
             iteration += 1
@@ -83,6 +87,26 @@ class Agent:
             for tc in tool_calls:
                 if self.on_tool_call:
                     self.on_tool_call(tc)
+
+                sig = f"{tc.name}:{json.dumps(tc.arguments, sort_keys=True)}"
+                count = call_counts.get(sig, 0) + 1
+                call_counts[sig] = count
+
+                if count > 3:
+                    result = ToolResult(
+                        success=False,
+                        output="",
+                        error="DecisionCore CommitmentGate suppressed duplicate tool execution. Please synthesize your findings and answer or select an alternative tool."
+                    )
+                    self.messages.append(ChatMessage(
+                        role="tool",
+                        name=tc.name,
+                        tool_call_id=tc.id,
+                        content=result.error
+                    ))
+                    if self.on_tool_result:
+                        self.on_tool_result(tc.name, result)
+                    continue
 
                 tool = self.tools.get(tc.name)
                 if not tool:
