@@ -7,7 +7,7 @@ name = "wide-sdk"
 version = "0.191126"
 description = "Python SDK to build autonomous AI coding and web security agents powered by Wide"
 readme = "README.md"
-authors = [{ name = "sl4de", email = "sl4de0day@github" }]
+authors = [{ name = "sl4de" }]
 license = { text = "GPL-3.0-or-later" }
 requires-python = ">=3.10"
 keywords = [
