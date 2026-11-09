@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wide-sdk"
+version = "0.191126"
+description = "Python SDK to build autonomous AI coding and web security agents powered by Wide"
+readme = "README.md"
+authors = [{ name = "sl4de", email = "sl4de0day@github" }]
+license = { text = "GPL-3.0-or-later" }
+requires-python = ">=3.10"
+keywords = [
+    "wide",
+    "wide-sdk",
+    "ai-agent",
+    "devsecops",
+    "appsec",
+    "security-scanner",
+    "sast",
+    "fuzzer"
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Topic :: Security",
+    "Topic :: Software Development :: Build Tools",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12"
+]
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/sl4de0day/wide-sdk"
+Repository = "https://github.com/sl4de0day/wide-sdk.git"
+Issues = "https://github.com/sl4de0day/wide-sdk/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["wide_sdk*"]
