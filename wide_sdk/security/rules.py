@@ -236,3 +236,94 @@ SECURITY_RULES: List[SecurityRule] = [
         remediation="Log stack traces internally and return generic error responses to clients."
     )
 ]
+
+DEFAULT_AGENT_RULES: List[SecurityRule] = [
+    SecurityRule(
+        id="wide/cwe078-ai-unsafe-tool-exec",
+        cwe="CWE-78",
+        category="AI_SECURITY",
+        severity="CRITICAL",
+        languages=["js", "jsx", "ts", "tsx", "py", "mjs", "cjs"],
+        pattern=re.compile(r"\b(?:exec|execSync|spawn|subprocess\.run|os\.system)\s*\(\s*(?:toolCall|tool_call|args|arguments|response\.command|patch\.command)", re.IGNORECASE),
+        source_pattern=None,
+        message="Executing raw system command directly from AI tool call response without argument validation.",
+        remediation="Whitelist allowed commands and run them in an isolated sandbox with fixed arguments."
+    ),
+    SecurityRule(
+        id="wide/cwe079-ai-prompt-injection",
+        cwe="CWE-79",
+        category="AI_SECURITY",
+        severity="HIGH",
+        languages=["js", "jsx", "ts", "tsx", "py", "mjs", "cjs"],
+        pattern=re.compile(r"\b(?:prompt|instruction|query|input)\s*[:=]\s*(?:f?[\"'].*?\{|`.*?$\{).*(?:req\.|params\.|body\.|userInput|user_input|request\.)", re.IGNORECASE),
+        source_pattern=None,
+        message="Untrusted user input concatenated directly into LLM prompt template without sanitization.",
+        remediation="Use structured multi-turn message roles or sanitize prompt inputs before sending to the model."
+    ),
+    SecurityRule(
+        id="wide/cwe095-ai-unconstrained-eval",
+        cwe="CWE-95",
+        category="AI_SECURITY",
+        severity="CRITICAL",
+        languages=["js", "jsx", "ts", "tsx", "py", "mjs", "cjs"],
+        pattern=re.compile(r"\b(?:eval|Function|vm\.runInContext|compile)\s*\(\s*(?:toolOutput|tool_output|response\.text|aiResult|ai_output|completion)", re.IGNORECASE),
+        source_pattern=None,
+        message="Evaluating raw executable code returned by LLM without sandboxing or static verification.",
+        remediation="Parse responses into structured abstract syntax trees or validate against a strict AST schema before execution."
+    ),
+    SecurityRule(
+        id="wide/cwe306-ai-unauthenticated-mcp-registration",
+        cwe="CWE-306",
+        category="AI_SECURITY",
+        severity="HIGH",
+        languages=["js", "jsx", "ts", "tsx", "py", "mjs", "cjs"],
+        pattern=re.compile(r"\b(?:registerMcpServer|addMcpServer|mcpClient\.connect)\s*\(\s*(?:url|endpoint|serverConfig)\s*\)", re.IGNORECASE),
+        source_pattern=None,
+        message="Model Context Protocol server registered without identity verification or authorization signature.",
+        remediation="Verify server host authorization and enforce cryptographic signature checks prior to registering external toolsets."
+    ),
+    SecurityRule(
+        id="wide/cwe400-ai-unbounded-agent-loop",
+        cwe="CWE-400",
+        category="AI_SECURITY",
+        severity="MEDIUM",
+        languages=["js", "jsx", "ts", "tsx", "py", "mjs", "cjs"],
+        pattern=re.compile(r"while\s*\(\s*(?:true|1|!done|!finished|!settled)\s*\)\s*\{(?![^}]*\b(?:maxRounds|maxSteps|maxIterations|round\s*>=|step\s*>=)\b)", re.IGNORECASE),
+        source_pattern=None,
+        message="Autonomous agent execution loop lacks explicit termination boundary or maximum step limit.",
+        remediation="Enforce a strict step threshold or cancellation budget to prevent runaway agent execution loops."
+    ),
+    SecurityRule(
+        id="wide/cwe770-ai-unbounded-context-accumulation",
+        cwe="CWE-770",
+        category="AI_SECURITY",
+        severity="MEDIUM",
+        languages=["js", "jsx", "ts", "tsx", "py", "mjs", "cjs"],
+        pattern=re.compile(r"\b(?:history|messages|chatContext)\.push\s*\(.*?\)(?![^;]*(?:slice|shift|trim|truncate|maxTokens|maxHistory))", re.IGNORECASE),
+        source_pattern=None,
+        message="LLM conversation context accumulates without token limits or sliding window truncation.",
+        remediation="Prune chat context using sliding window truncation or token counting before appending turns."
+    ),
+    SecurityRule(
+        id="wide/cwe798-ai-prompt-secret-leak",
+        cwe="CWE-798",
+        category="AI_SECURITY",
+        severity="HIGH",
+        languages=["js", "jsx", "ts", "tsx", "py", "mjs", "cjs"],
+        pattern=re.compile(r"\b(?:systemPrompt|systemMessage|system_prompt)\s*[:=].*?(?:process\.env\.(?:[A-Z_]*(?:KEY|SECRET|TOKEN|PASSWORD|PASS|AUTH))|apiKey|api_key|secret)", re.IGNORECASE),
+        source_pattern=None,
+        message="Sensitive secrets or private API credentials embedded in prompt context.",
+        remediation="Strip private credentials from prompt text and provide secrets through isolated backend proxy channels."
+    ),
+    SecurityRule(
+        id="wide/cwe829-ai-unvalidated-patch-apply",
+        cwe="CWE-829",
+        category="AI_SECURITY",
+        severity="HIGH",
+        languages=["js", "jsx", "ts", "tsx", "py", "mjs", "cjs"],
+        pattern=re.compile(r"\b(?:applyPatch|gitApply|applyDiff|writePatch)\s*\(\s*(?:aiPatch|llmResponse|output\.patch|modelDiff)", re.IGNORECASE),
+        source_pattern=None,
+        message="Applying LLM-generated patch directly to codebase without path traversal or integrity checks.",
+        remediation="Validate destination file paths are strictly within workspace bounds and run static scans before applying patches."
+    )
+]

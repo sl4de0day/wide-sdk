@@ -7,6 +7,8 @@ from .providers.base import BaseProvider
 from .tools.base import BaseTool
 from .tools import DEFAULT_TOOLS
 from .decision import CommitmentGate
+from .security.loader import RuleLoader
+from .security.rules import SecurityRule
 
 DEFAULT_SYSTEM_PROMPT = """You are Wide Agent, an autonomous security-first AI coding and penetration testing assistant.
 You operate programmatically via Wide SDK.
@@ -18,6 +20,7 @@ Your capabilities:
 - Send HTTP requests (send_http_request) to probe web endpoints and verify vulnerability remediations.
 - Fuzz web endpoints (fuzz_endpoint) with automated injection vectors to verify live vulnerabilities.
 - Generate targeted offensive security payloads (generate_payloads) for penetration testing.
+- Autonomously navigate, interact with, click, fill forms, and extract content from websites using browser tools (browser_navigate, browser_click, browser_type, browser_extract, browser_screenshot, browser_close).
 - Keep your answers concise, practical, and action-oriented.
 - Always inspect relevant files before modifying them.
 - When fixing security vulnerabilities, provide clean, secure, production-grade solutions."""
@@ -43,10 +46,18 @@ class Agent:
         self.on_thought = on_thought
         self.on_tool_call = on_tool_call
         self.on_tool_result = on_tool_result
+        self.agent_rules = RuleLoader.load_agent_rules(workspace_dir=self.working_directory)
 
         self.messages: List[ChatMessage] = [
             ChatMessage(role="system", content=self.system_prompt)
         ]
+
+    def get_agent_rules(self) -> List[SecurityRule]:
+        return self.agent_rules
+
+    def reload_agent_rules(self) -> List[SecurityRule]:
+        self.agent_rules = RuleLoader.load_agent_rules(workspace_dir=self.working_directory)
+        return self.agent_rules
 
     def register_tool(self, tool: BaseTool) -> None:
         self.tools[tool.definition.name] = tool

@@ -19,11 +19,30 @@ from .types import (
 )
 from .context import ContextManager
 from .agent import Agent
-from .tools import BaseTool, tool, DEFAULT_TOOLS
+from .tools import (
+    BaseTool,
+    tool,
+    DEFAULT_TOOLS,
+    browser_navigate_tool,
+    browser_click_tool,
+    browser_type_tool,
+    browser_extract_tool,
+    browser_screenshot_tool,
+    browser_close_tool,
+)
+from .browser import (
+    BrowserController,
+    BrowserState,
+    DOMElement,
+)
 from .security import (
     SecurityScanner,
     SecurityRule,
     SECURITY_RULES,
+    DEFAULT_AGENT_RULES,
+    load_rules,
+    load_agent_rules,
+    get_agent_rules_path,
     SECURITY_PAYLOADS,
     fuzz_endpoint,
     get_payloads_for_type,
@@ -38,7 +57,7 @@ from .providers import (
     DeepSeekProvider,
 )
 
-__version__ = "0.291126"
+__version__ = "0.3101126"
 
 __all__ = [
     "Agent",
@@ -55,10 +74,23 @@ __all__ = [
     "SecurityScanner",
     "SecurityRule",
     "SECURITY_RULES",
+    "DEFAULT_AGENT_RULES",
+    "load_rules",
+    "load_agent_rules",
+    "get_agent_rules_path",
     "SECURITY_PAYLOADS",
     "BaseTool",
     "tool",
     "DEFAULT_TOOLS",
+    "BrowserController",
+    "BrowserState",
+    "DOMElement",
+    "browser_navigate_tool",
+    "browser_click_tool",
+    "browser_type_tool",
+    "browser_extract_tool",
+    "browser_screenshot_tool",
+    "browser_close_tool",
     "BaseProvider",
     "GeminiProvider",
     "OllamaProvider",

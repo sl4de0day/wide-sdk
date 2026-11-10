@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "wide-sdk"
-version = "0.291126"
+version = "0.3101126"
 description = "Python SDK to build autonomous AI coding and web security agents powered by Wide"
 readme = "README.md"
 authors = [{ name = "sl4de" }]
