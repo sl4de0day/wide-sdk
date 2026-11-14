@@ -1,5 +1,6 @@
 import os
 import json
+import re
 from typing import List, Dict, Optional, Callable, Any
 from .types import ChatMessage, ToolDefinition, ToolCall, ToolResult
 from .context import ContextManager
@@ -22,6 +23,7 @@ Your capabilities:
 - Generate targeted offensive security payloads (generate_payloads) for penetration testing.
 - Autonomously navigate, interact with, click, fill forms, and extract content from websites using browser tools (browser_navigate, browser_click, browser_type, browser_extract, browser_screenshot, browser_close).
 - Keep your answers concise, practical, and action-oriented.
+- Do not use emojis anywhere in your responses or generated code. Never output emojis under any circumstances.
 - Always inspect relevant files before modifying them.
 - When fixing security vulnerabilities, provide clean, secure, production-grade solutions."""
 
@@ -81,6 +83,8 @@ class Agent:
             self.messages = self.context_manager.compact_messages(self.messages)
 
             content, tool_calls = self.provider.chat(self.messages, tool_defs)
+            if content:
+                content = re.sub(r"[\U00010000-\U0010ffff\u2600-\u26ff\u2700-\u27bf\u2300-\u23ff]", "", content)
             final_text = content
 
             if content and self.on_thought:
