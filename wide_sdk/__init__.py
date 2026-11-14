@@ -59,6 +59,23 @@ from .providers import (
 
 __version__ = "0.3101126"
 
+def check_for_updates() -> dict:
+    import urllib.request
+    import json
+    url = "https://api.github.com/repos/sl4de0day/wide-sdk/releases/latest"
+    req = urllib.request.Request(url, headers={"User-Agent": "Wide-SDK"})
+    try:
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            latest = str(data.get("tag_name") or data.get("name") or "").lstrip("v")
+            return {
+                "current": __version__,
+                "latest": latest,
+                "available": latest > __version__ if latest else False,
+            }
+    except Exception as e:
+        return {"current": __version__, "latest": "", "available": False, "error": str(e)}
+
 __all__ = [
     "Agent",
     "CommitmentGate",
@@ -106,5 +123,6 @@ __all__ = [
     "fuzz_endpoint",
     "get_payloads_for_type",
     "get_all_payload_types",
+    "check_for_updates",
     "__version__",
 ]
