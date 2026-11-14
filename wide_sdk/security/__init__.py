@@ -8,6 +8,7 @@ from .loader import (
     update_rules,
     build_agent_instructions,
     sanitize_output,
+    load_advisories,
 )
 from .payloads import SECURITY_PAYLOADS, get_payloads_for_type, get_all_payload_types
 from .fuzzer import fuzz_endpoint, FuzzReport, FuzzFinding
@@ -24,6 +25,7 @@ __all__ = [
     "update_rules",
     "build_agent_instructions",
     "sanitize_output",
+    "load_advisories",
     "SECURITY_PAYLOADS",
     "get_payloads_for_type",
     "get_all_payload_types",

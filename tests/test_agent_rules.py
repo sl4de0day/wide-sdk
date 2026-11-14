@@ -24,6 +24,7 @@ class TestAgentRules(unittest.TestCase):
         self.assertTrue(len(rules) >= 8)
         ids = [r.id for r in rules]
         self.assertIn("wide/ai-no-emojis", ids)
+        self.assertIn("wide/ai-no-system-prompt-leak", ids)
         self.assertIn("wide/cwe078-ai-unsafe-tool-exec", ids)
         self.assertIn("wide/cwe079-ai-prompt-injection", ids)
         self.assertIn("wide/cwe095-ai-unconstrained-eval", ids)

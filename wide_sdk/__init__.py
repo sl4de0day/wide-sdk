@@ -48,6 +48,16 @@ from .security import (
     get_payloads_for_type,
     get_all_payload_types,
 )
+from .database import (
+    DatabaseClient,
+    DatabaseConnectionSpec,
+    QueryResult,
+    SchemaResult,
+    SecurityAuditFinding,
+    parse_database_target,
+    mask_dsn,
+)
+from .tools.db import db_inspect_schema_tool, db_query_tool, db_audit_tool
 from .providers import (
     BaseProvider,
     GeminiProvider,
@@ -57,7 +67,7 @@ from .providers import (
     DeepSeekProvider,
 )
 
-__version__ = "0.3101126"
+__version__ = "0.4141126"
 
 def check_for_updates() -> dict:
     import urllib.request
@@ -123,6 +133,16 @@ __all__ = [
     "fuzz_endpoint",
     "get_payloads_for_type",
     "get_all_payload_types",
+    "DatabaseClient",
+    "DatabaseConnectionSpec",
+    "QueryResult",
+    "SchemaResult",
+    "SecurityAuditFinding",
+    "parse_database_target",
+    "mask_dsn",
+    "db_inspect_schema_tool",
+    "db_query_tool",
+    "db_audit_tool",
     "check_for_updates",
     "__version__",
 ]

@@ -84,6 +84,8 @@ class SecurityScanner:
                             continue
 
                         if rule.pattern.search(line):
+                            if rule.not_match and rule.not_match.search(line):
+                                continue
                             confirmed = True
                             if rule.source_pattern:
                                 window_start = max(0, idx - 15)

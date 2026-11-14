@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "wide-sdk"
-version = "0.3101126"
+version = "0.4141126"
 description = "Python SDK to build autonomous AI coding and web security agents powered by Wide"
 readme = "README.md"
 authors = [{ name = "sl4de" }]
@@ -31,6 +31,12 @@ classifiers = [
     "Programming Language :: Python :: 3.12"
 ]
 dependencies = []
+
+[project.optional-dependencies]
+postgres = ["psycopg[binary]>=3.1.0"]
+mysql = ["pymysql>=1.1.0"]
+redis = ["redis>=5.0.0"]
+db = ["psycopg[binary]>=3.1.0", "pymysql>=1.1.0", "redis>=5.0.0"]
 
 [project.urls]
 Homepage = "https://github.com/sl4de0day/wide-sdk"

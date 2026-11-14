@@ -1,12 +1,23 @@
 import unittest
 from wide_sdk.browser import BrowserController, DOMElement
 from wide_sdk.browser.controller import _PageHTMLParser
+from wide_sdk.tools import DEFAULT_TOOLS
 from wide_sdk.tools.browser import (
+    browser_open_tool,
     browser_navigate_tool,
+    browser_snapshot_tool,
     browser_click_tool,
     browser_type_tool,
+    browser_press_tool,
+    browser_hover_tool,
+    browser_select_tool,
+    browser_scroll_tool,
+    browser_wait_tool,
     browser_extract_tool,
     browser_screenshot_tool,
+    browser_console_tool,
+    browser_cookies_tool,
+    browser_eval_tool,
     browser_close_tool,
     get_browser
 )
@@ -111,6 +122,27 @@ class TestBrowser(unittest.TestCase):
         shot_res = browser_screenshot_tool.execute({}, ctx)
         self.assertTrue(shot_res.success)
         self.assertIn("SNAPSHOT", shot_res.output)
+
+        snap_res = browser_snapshot_tool.execute({}, ctx)
+        self.assertTrue(snap_res.success)
+        self.assertIn("@e1", snap_res.output)
+
+        scroll_res = browser_scroll_tool.execute({"direction": "down", "pixels": 200}, ctx)
+        self.assertTrue(scroll_res.success)
+
+        console_res = browser_console_tool.execute({}, ctx)
+        self.assertTrue(console_res.success)
+
+        cookie_res = browser_cookies_tool.execute({"action": "set", "name": "sid", "value": "val"}, ctx)
+        self.assertTrue(cookie_res.success)
+
+        for name in (
+            "browser_open", "browser_navigate", "browser_snapshot", "browser_click",
+            "browser_type", "browser_press", "browser_hover", "browser_select",
+            "browser_scroll", "browser_wait", "browser_extract", "browser_screenshot",
+            "browser_console", "browser_cookies", "browser_eval", "browser_close"
+        ):
+            self.assertIn(name, DEFAULT_TOOLS)
 
         close_res = browser_close_tool.execute({}, ctx)
         self.assertTrue(close_res.success)
