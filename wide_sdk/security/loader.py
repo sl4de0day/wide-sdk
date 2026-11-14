@@ -16,6 +16,22 @@ REMOTE_CHECKSUMS_URL = "https://raw.githubusercontent.com/sl4de0day/wide-rules/m
 INSTALL_WIDE_RULES = Path(__file__).resolve().parents[3] / "wide-rules" / "dist" / "rules.json"
 INSTALL_WIDE_OSV = Path(__file__).resolve().parents[3] / "wide-rules" / "dist" / "osv-bundle.json"
 
+_EMOJI_SINGLE = r"(?:[0-9#*]\uFE0F?\u20E3|[\U0001F1E6-\U0001FAFF\U0001F000-\U0001F0FF\U000E0020-\U000E007F]|[\u231A-\u23FF\u2600-\u27BF\u2B05-\u2B55][\uFE0E\uFE0F]?|[\u2139\u2194-\u21AA\u24C2\u25AA-\u25FE\u2934-\u2935\u3030\u303D\u3297\u3299]\uFE0F|[\uFE0E\uFE0F\u20E3])"
+_EMOJI_ZWJ_RE = re.compile(rf"(?:{_EMOJI_SINGLE})(?:\u200D(?:{_EMOJI_SINGLE}))+")
+_EMOJI_SINGLE_RE = re.compile(_EMOJI_SINGLE)
+
+
+def _merge_default_agent_rules(rules: List[SecurityRule]) -> List[SecurityRule]:
+    merged = list(rules)
+    seen = {r.id for r in merged}
+    for core in DEFAULT_AGENT_RULES:
+        if core.id not in seen:
+            merged.append(core)
+            seen.add(core.id)
+    merged.sort(key=lambda r: 0 if r.id == "wide/ai-no-emojis" else 1)
+    return merged
+
+
 class RuleLoader:
     @staticmethod
     def get_cache_path() -> Path:
@@ -102,26 +118,26 @@ class RuleLoader:
             rules = cls._parse_file(ws_rules)
             filtered = [r for r in rules if r.category == "AI_SECURITY" or "ai-" in r.id]
             if filtered:
-                return filtered
+                return _merge_default_agent_rules(filtered)
 
         sibling_wide_rules = (Path(workspace_dir) / ".." / "wide-rules" / "dist" / "rules.json").resolve()
         if sibling_wide_rules.exists():
             rules = cls._parse_file(sibling_wide_rules)
             filtered = [r for r in rules if r.category == "AI_SECURITY" or "ai-" in r.id]
             if filtered:
-                return filtered
+                return _merge_default_agent_rules(filtered)
 
         if INSTALL_WIDE_RULES.exists():
             rules = cls._parse_file(INSTALL_WIDE_RULES)
             filtered = [r for r in rules if r.category == "AI_SECURITY" or "ai-" in r.id]
             if filtered:
-                return filtered
+                return _merge_default_agent_rules(filtered)
 
         if DEFAULT_CACHE_FILE.exists():
             rules = cls._parse_file(DEFAULT_CACHE_FILE)
             filtered = [r for r in rules if r.category == "AI_SECURITY" or "ai-" in r.id]
             if filtered:
-                return filtered
+                return _merge_default_agent_rules(filtered)
 
         return list(DEFAULT_AGENT_RULES)
 
@@ -157,10 +173,13 @@ class RuleLoader:
         if not text:
             return ""
         target_rules = rules if rules is not None and len(rules) > 0 else cls.load_agent_rules()
-        result = text
+        result = _EMOJI_SINGLE_RE.sub("", _EMOJI_ZWJ_RE.sub("", text))
         for r in target_rules:
-            if r.id == "wide/ai-no-emojis" or "emoji" in r.id:
-                result = re.sub(r"[\U00010000-\U0010ffff\u2600-\u27bf]", "", result)
+            if (r.id == "wide/ai-no-emojis" or "emoji" in r.id) and r.pattern:
+                try:
+                    result = r.pattern.sub("", result)
+                except Exception:
+                    pass
         return result
 
     @classmethod

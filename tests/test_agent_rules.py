@@ -38,8 +38,26 @@ class TestAgentRules(unittest.TestCase):
         rules = load_agent_rules(workspace_dir=str(self.root))
         instructions = build_agent_instructions(rules)
         self.assertIn("Do not use emojis", instructions)
-        clean = sanitize_output("Hello 😀 World", rules)
+        clean = sanitize_output("Hello 😀⭐ℹ️1️⃣👨‍💻🇷🇺 World", rules)
         self.assertEqual(clean, "Hello  World")
+
+    def test_partial_rules_bundle_merges_no_emojis(self) -> None:
+        wide_dir = self.root / ".wide"
+        wide_dir.mkdir(parents=True, exist_ok=True)
+        (wide_dir / "rules.json").write_text(json.dumps([
+            {
+                "id": "wide/cwe078-ai-unsafe-tool-exec",
+                "cwe": "CWE-78",
+                "category": "AI_SECURITY",
+                "severity": "CRITICAL",
+                "pattern": r"exec\(",
+                "message": "Unsafe exec",
+                "instruction": "Never run unsafe exec"
+            }
+        ]), encoding="utf-8")
+        rules = load_agent_rules(workspace_dir=str(self.root))
+        self.assertIn("wide/ai-no-emojis", [r.id for r in rules])
+        self.assertEqual(sanitize_output("Status ✅ Done 1️⃣", rules), "Status  Done ")
 
     def test_agent_rules_path(self) -> None:
         info = get_agent_rules_path(workspace_dir=str(self.root))
