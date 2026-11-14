@@ -23,6 +23,9 @@ class RuleLoader:
         ws_rules_path = (Path(workspace_dir) / ".wide" / "rules.json").resolve()
         if ws_rules_path.exists():
             return {"active": str(ws_rules_path), "workspace": str(ws_rules_path), "cache": str(DEFAULT_CACHE_FILE)}
+        sibling_wide_rules = (Path(workspace_dir) / ".." / "wide-rules" / "dist" / "rules.json").resolve()
+        if sibling_wide_rules.exists():
+            return {"active": str(sibling_wide_rules), "workspace": None, "cache": str(DEFAULT_CACHE_FILE)}
         if DEFAULT_CACHE_FILE.exists():
             return {"active": str(DEFAULT_CACHE_FILE), "workspace": None, "cache": str(DEFAULT_CACHE_FILE)}
         return {"active": "embedded", "workspace": None, "cache": str(DEFAULT_CACHE_FILE)}
@@ -43,6 +46,12 @@ class RuleLoader:
         ws_rules = (Path(workspace_dir) / ".wide" / "rules.json").resolve()
         if ws_rules.exists():
             rules = cls._parse_file(ws_rules)
+            if rules:
+                return rules
+
+        sibling_wide_rules = (Path(workspace_dir) / ".." / "wide-rules" / "dist" / "rules.json").resolve()
+        if sibling_wide_rules.exists():
+            rules = cls._parse_file(sibling_wide_rules)
             if rules:
                 return rules
 
@@ -82,6 +91,13 @@ class RuleLoader:
             if filtered:
                 return filtered
 
+        sibling_wide_rules = (Path(workspace_dir) / ".." / "wide-rules" / "dist" / "rules.json").resolve()
+        if sibling_wide_rules.exists():
+            rules = cls._parse_file(sibling_wide_rules)
+            filtered = [r for r in rules if r.category == "AI_SECURITY" or "ai-" in r.id]
+            if filtered:
+                return filtered
+
         if DEFAULT_CACHE_FILE.exists():
             rules = cls._parse_file(DEFAULT_CACHE_FILE)
             filtered = [r for r in rules if r.category == "AI_SECURITY" or "ai-" in r.id]
@@ -89,6 +105,27 @@ class RuleLoader:
                 return filtered
 
         return list(DEFAULT_AGENT_RULES)
+
+    @classmethod
+    def build_agent_instructions(cls, rules: Optional[List[SecurityRule]] = None) -> str:
+        target_rules = rules if rules is not None and len(rules) > 0 else cls.load_agent_rules()
+        lines: List[str] = []
+        for r in target_rules:
+            text = (r.instruction or r.message or "").strip()
+            if text:
+                lines.append(f"- {text}")
+        return "\n".join(lines)
+
+    @classmethod
+    def sanitize_output(cls, text: str, rules: Optional[List[SecurityRule]] = None) -> str:
+        if not text:
+            return ""
+        target_rules = rules if rules is not None and len(rules) > 0 else cls.load_agent_rules()
+        result = text
+        for r in target_rules:
+            if r.id == "wide/ai-no-emojis" or "emoji" in r.id:
+                result = re.sub(r"[\U00010000-\U0010ffff\u2600-\u27bf]", "", result)
+        return result
 
     @classmethod
     def update_rules(cls) -> int:
@@ -133,7 +170,8 @@ class RuleLoader:
                             pattern=pat,
                             source_pattern=src_pat,
                             message=item.get("message", ""),
-                            remediation=item.get("remediation", "")
+                            remediation=item.get("remediation", ""),
+                            instruction=item.get("instruction", item.get("message", ""))
                         )
                     )
                 except Exception:
@@ -150,6 +188,12 @@ def load_rules(custom_path: Optional[str] = None, workspace_dir: str = ".") -> L
 
 def load_agent_rules(custom_path: Optional[str] = None, workspace_dir: str = ".") -> List[SecurityRule]:
     return RuleLoader.load_agent_rules(custom_path, workspace_dir)
+
+def build_agent_instructions(rules: Optional[List[SecurityRule]] = None) -> str:
+    return RuleLoader.build_agent_instructions(rules)
+
+def sanitize_output(text: str, rules: Optional[List[SecurityRule]] = None) -> str:
+    return RuleLoader.sanitize_output(text, rules)
 
 def get_agent_rules_path(workspace_dir: str = ".") -> Dict[str, Any]:
     return RuleLoader.get_agent_rules_path(workspace_dir)

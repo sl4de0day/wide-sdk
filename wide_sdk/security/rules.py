@@ -13,6 +13,7 @@ class SecurityRule:
     source_pattern: Optional[Pattern]
     message: str
     remediation: str
+    instruction: Optional[str] = None
 
 SECURITY_RULES: List[SecurityRule] = [
     SecurityRule(
@@ -46,7 +47,7 @@ SECURITY_RULES: List[SecurityRule] = [
         pattern=re.compile(r"(?:innerHTML|outerHTML|document\.write|dangerouslySetInnerHTML|v-html|\becho\s+\$_(?:GET|POST)|print\s+\$_)\s*(?:=|\()\s*(?:.*?\b(?:query|param|body|req|location|search|URLSearchParams)\b)", re.IGNORECASE),
         source_pattern=None,
         message="Unsanitized user input rendered directly into the DOM or HTML output.",
-        remediation="Use textContent or framework-safe bindings. Sanitize HTML using DOMPurify before rendering."
+        remediation="Use textContent, framework-native safe bindings, or sanitize HTML using DOMPurify."
     ),
     SecurityRule(
         id="WIDE-SEC-004",
@@ -57,7 +58,7 @@ SECURITY_RULES: List[SecurityRule] = [
         pattern=re.compile(r"(?:fetch|axios\.(?:get|post|request)|http\.get|urllib\.request|requests\.(?:get|post)|curl_exec)\s*\(\s*(?:req\.|params|query|body|request\.)", re.IGNORECASE),
         source_pattern=None,
         message="Outbound HTTP request targeting a user-supplied URL without destination validation.",
-        remediation="Validate destination URLs against an explicit domain allowlist and block private IP ranges."
+        remediation="Validate destination URLs against an explicit allowlist and block private IP ranges."
     ),
     SecurityRule(
         id="WIDE-SEC-005",
@@ -68,7 +69,7 @@ SECURITY_RULES: List[SecurityRule] = [
         pattern=re.compile(r"(?:readFile|readFileSync|createReadStream|open|file_get_contents|readfile|FileInputStream)\s*\(\s*(?:.*?path\.join.*?req\.|.*?\+\s*(?:req\.|params|query|\$_)|f['\"].*?\{request)", re.IGNORECASE),
         source_pattern=None,
         message="File system access with untrusted path concatenation vulnerable to directory traversal.",
-        remediation="Resolve the path with Path.resolve() and verify that it starts with the intended base directory."
+        remediation="Resolve path with absolute check and verify destination resides within expected root."
     ),
     SecurityRule(
         id="WIDE-SEC-006",
@@ -79,7 +80,7 @@ SECURITY_RULES: List[SecurityRule] = [
         pattern=re.compile(r"(?:pickle\.loads|yaml\.load\([^,)]+\)|unserialize\s*\(|node-serialize|serialize\.unserialize|XMLDecoder|ObjectInputStream)", re.IGNORECASE),
         source_pattern=None,
         message="Untrusted deserialization can lead to arbitrary code execution.",
-        remediation="Never deserialize untrusted input with unsafe serializers. Use JSON, PyYAML safe_load, or cryptographic signing."
+        remediation="Never deserialize untrusted input with unsafe serializers. Use JSON or safe_load."
     ),
     SecurityRule(
         id="WIDE-SEC-007",
@@ -90,7 +91,7 @@ SECURITY_RULES: List[SecurityRule] = [
         pattern=re.compile(r"(?:xml2js|DOMParser|SimpleXMLElement|libxml_disable_entity_loader\s*\(\s*false|DocumentBuilderFactory.*?setFeature.*?external-general-entities.*?true)", re.IGNORECASE),
         source_pattern=None,
         message="XML parser configured without disabling external entity resolution.",
-        remediation="Disable external DTDs and entity expansion in XML parsers."
+        remediation="Disable external DTDs and external entity expansion."
     ),
     SecurityRule(
         id="WIDE-SEC-008",
@@ -101,7 +102,7 @@ SECURITY_RULES: List[SecurityRule] = [
         pattern=re.compile(r"(?:(?:api_?key|secret|password|access_?token|jwt_?secret|private_?key)\s*[:=]\s*['\"][a-zA-Z0-9_\-\.]{16,}['\"]|AKIA[0-9A-Z]{16}|ghp_[a-zA-Z0-9]{36}|AIza[0-9A-Za-z\-_]{35})", re.IGNORECASE),
         source_pattern=None,
         message="High-entropy API token, private key, or credential hardcoded in source.",
-        remediation="Extract secrets to environment variables or an external secret manager."
+        remediation="Extract secrets to environment variables or secret management services."
     ),
     SecurityRule(
         id="WIDE-SEC-009",
@@ -112,7 +113,7 @@ SECURITY_RULES: List[SecurityRule] = [
         pattern=re.compile(r"(?:createHash\s*\(\s*['\"](?:md5|sha1)['\"]|hashlib\.(?:md5|sha1)|MD5\.Create|DES|RC4|crypto\.createCipheriv\s*\(\s*['\"][^'\"]*ecb)", re.IGNORECASE),
         source_pattern=None,
         message="Collision-prone or deprecated cryptographic algorithm (MD5/SHA1/DES/ECB mode).",
-        remediation="Use SHA-256 for integrity, bcrypt/argon2 for passwords, and AES-256-GCM for symmetric encryption."
+        remediation="Use SHA-256 for integrity, bcrypt/argon2 for passwords, and AES-256-GCM for encryption."
     ),
     SecurityRule(
         id="WIDE-SEC-010",
@@ -131,10 +132,10 @@ SECURITY_RULES: List[SecurityRule] = [
         category="Regular Expression Denial of Service (ReDoS)",
         severity="MEDIUM",
         languages=["js", "ts", "py", "java"],
-        pattern=re.compile(r"/(?:[a-zA-Z0-9_]*\+)+[a-zA-Z0-9_]*\+", re.IGNORECASE),
+        pattern=re.compile(r"\/(?:[a-zA-Z0-9_]*\+)+[a-zA-Z0-9_]*\+", re.IGNORECASE),
         source_pattern=None,
         message="Catastrophic backtracking vulnerability detected in nested regex quantifier.",
-        remediation="Refactor regex to eliminate overlapping nested repetitions or enforce length limits."
+        remediation="Refactor regex to eliminate overlapping nested repetitions."
     ),
     SecurityRule(
         id="WIDE-SEC-012",
@@ -145,7 +146,7 @@ SECURITY_RULES: List[SecurityRule] = [
         pattern=re.compile(r"(?:__proto__|constructor\s*\[\s*['\"]prototype['\"]\]|Object\.assign\s*\(\s*\{\}\s*,\s*(?:req\.|body|params)|merge\s*\([^,]+,\s*(?:req\.|body))", re.IGNORECASE),
         source_pattern=None,
         message="Potential prototype pollution via unsafe recursive object merging.",
-        remediation="Validate keys against '__proto__' and 'constructor', or use Object.create(null)."
+        remediation="Validate keys against __proto__ and constructor, or use Object.create(null)."
     ),
     SecurityRule(
         id="WIDE-SEC-013",
@@ -167,7 +168,7 @@ SECURITY_RULES: List[SecurityRule] = [
         pattern=re.compile(r"(?:res\.redirect|redirect|header\s*\(\s*['\"]Location:)\s*\(\s*(?:req\.|params|query|request\.)", re.IGNORECASE),
         source_pattern=None,
         message="HTTP redirection destination is controlled by untrusted request parameter.",
-        remediation="Use relative redirect paths or validate destinations against an explicit domain allowlist."
+        remediation="Use relative redirect paths or validate destinations against an allowlist."
     ),
     SecurityRule(
         id="WIDE-SEC-015",
@@ -189,7 +190,7 @@ SECURITY_RULES: List[SecurityRule] = [
         pattern=re.compile(r"(?:findById|findByPk|findOne|SELECT.*?WHERE id =)\s*\(\s*req\.params\.id\s*\)(?!.*?(?:userId|ownerId|user\._?id|req\.user))", re.IGNORECASE),
         source_pattern=None,
         message="Database record queried strictly by client-supplied ID without verifying ownership.",
-        remediation="Scope database queries to the authenticated user ID."
+        remediation="Always scope database queries to the authenticated user ID."
     ),
     SecurityRule(
         id="WIDE-SEC-017",
@@ -221,8 +222,8 @@ SECURITY_RULES: List[SecurityRule] = [
         languages=["js", "ts", "py", "php", "java"],
         pattern=re.compile(r"(?:Math\.random|random\.random|rand\(|mt_rand)\s*\(\s*\).*?(?:token|secret|session|key|nonce|auth|otp)", re.IGNORECASE),
         source_pattern=None,
-        message="Pseudorandom generator used for security-sensitive token generation.",
-        remediation="Use cryptographically secure random number generators (secrets.token_hex())."
+        message="Pseudorandom number generator used for security-sensitive token generation.",
+        remediation="Use cryptographically secure random number generators (secrets module)."
     ),
     SecurityRule(
         id="WIDE-SEC-020",
@@ -230,7 +231,7 @@ SECURITY_RULES: List[SecurityRule] = [
         category="Information Leakage",
         severity="LOW",
         languages=["js", "ts", "py", "php", "java"],
-        pattern=re.compile(r"(?:res\.(?:send|json)\s*\(\s*(?:err\.stack|err\.message|error\.stack)|printStackTrace\s*\(\)|ini_set\s*\(\s*['\"]display_errors['\"]\s*,\s*['\"]1['\"]\))", re.IGNORECASE),
+        pattern=re.compile(r"(?:res\.(?:send|json)\s*\(\s*(?:err\.stack|err\.message|error\.stack)|printStackTrace\s*\(\)|ini_set\s*\(\s*['\"]display_errors['\"]\s*,\s*['\"]1['\"])", re.IGNORECASE),
         source_pattern=None,
         message="Detailed internal error stack trace or debug information exposed to client.",
         remediation="Log stack traces internally and return generic error responses to clients."
@@ -238,6 +239,18 @@ SECURITY_RULES: List[SecurityRule] = [
 ]
 
 DEFAULT_AGENT_RULES: List[SecurityRule] = [
+    SecurityRule(
+        id="wide/ai-no-emojis",
+        cwe="N/A",
+        category="AI_SECURITY",
+        severity="HIGH",
+        languages=["all"],
+        pattern=re.compile(r"[\U00010000-\U0010ffff\u2600-\u27bf]"),
+        source_pattern=None,
+        message="AI agents must not use emojis or emoticons under any circumstances.",
+        remediation="Strip all emojis from text and outputs, preserving clean technical prose.",
+        instruction="Do not use emojis anywhere in your responses or generated code. Never output emojis under any circumstances."
+    ),
     SecurityRule(
         id="wide/cwe078-ai-unsafe-tool-exec",
         cwe="CWE-78",
@@ -247,7 +260,8 @@ DEFAULT_AGENT_RULES: List[SecurityRule] = [
         pattern=re.compile(r"\b(?:exec|execSync|spawn|subprocess\.run|os\.system)\s*\(\s*(?:toolCall|tool_call|args|arguments|response\.command|patch\.command)", re.IGNORECASE),
         source_pattern=None,
         message="Executing raw system command directly from AI tool call response without argument validation.",
-        remediation="Whitelist allowed commands and run them in an isolated sandbox with fixed arguments."
+        remediation="Whitelist allowed commands and run them in an isolated sandbox with fixed arguments.",
+        instruction="Never execute raw system commands directly from AI tool call responses without argument validation."
     ),
     SecurityRule(
         id="wide/cwe079-ai-prompt-injection",
@@ -258,7 +272,8 @@ DEFAULT_AGENT_RULES: List[SecurityRule] = [
         pattern=re.compile(r"\b(?:prompt|instruction|query|input)\s*[:=]\s*(?:f?[\"'].*?\{|`.*?$\{).*(?:req\.|params\.|body\.|userInput|user_input|request\.)", re.IGNORECASE),
         source_pattern=None,
         message="Untrusted user input concatenated directly into LLM prompt template without sanitization.",
-        remediation="Use structured multi-turn message roles or sanitize prompt inputs before sending to the model."
+        remediation="Use structured multi-turn message roles or sanitize prompt inputs before sending to the model.",
+        instruction="Always validate and sanitize untrusted user input before incorporating into prompt templates."
     ),
     SecurityRule(
         id="wide/cwe095-ai-unconstrained-eval",
@@ -269,7 +284,8 @@ DEFAULT_AGENT_RULES: List[SecurityRule] = [
         pattern=re.compile(r"\b(?:eval|Function|vm\.runInContext|compile)\s*\(\s*(?:toolOutput|tool_output|response\.text|aiResult|ai_output|completion)", re.IGNORECASE),
         source_pattern=None,
         message="Evaluating raw executable code returned by LLM without sandboxing or static verification.",
-        remediation="Parse responses into structured abstract syntax trees or validate against a strict AST schema before execution."
+        remediation="Parse responses into structured abstract syntax trees or validate against a strict AST schema before execution.",
+        instruction="Never evaluate raw executable code dynamically without AST schema validation or sandboxing."
     ),
     SecurityRule(
         id="wide/cwe306-ai-unauthenticated-mcp-registration",
@@ -280,7 +296,8 @@ DEFAULT_AGENT_RULES: List[SecurityRule] = [
         pattern=re.compile(r"\b(?:registerMcpServer|addMcpServer|mcpClient\.connect)\s*\(\s*(?:url|endpoint|serverConfig)\s*\)", re.IGNORECASE),
         source_pattern=None,
         message="Model Context Protocol server registered without identity verification or authorization signature.",
-        remediation="Verify server host authorization and enforce cryptographic signature checks prior to registering external toolsets."
+        remediation="Verify server host authorization and enforce cryptographic signature checks prior to registering external toolsets.",
+        instruction="Never register external toolsets or MCP servers without authentication and user authorization."
     ),
     SecurityRule(
         id="wide/cwe400-ai-unbounded-agent-loop",
@@ -291,7 +308,8 @@ DEFAULT_AGENT_RULES: List[SecurityRule] = [
         pattern=re.compile(r"while\s*\(\s*(?:true|1|!done|!finished|!settled)\s*\)\s*\{(?![^}]*\b(?:maxRounds|maxSteps|maxIterations|round\s*>=|step\s*>=)\b)", re.IGNORECASE),
         source_pattern=None,
         message="Autonomous agent execution loop lacks explicit termination boundary or maximum step limit.",
-        remediation="Enforce a strict step threshold or cancellation budget to prevent runaway agent execution loops."
+        remediation="Enforce a strict step threshold or cancellation budget to prevent runaway agent execution loops.",
+        instruction="Always respect maximum step thresholds and loop termination boundaries."
     ),
     SecurityRule(
         id="wide/cwe770-ai-unbounded-context-accumulation",
@@ -302,7 +320,8 @@ DEFAULT_AGENT_RULES: List[SecurityRule] = [
         pattern=re.compile(r"\b(?:history|messages|chatContext)\.push\s*\(.*?\)(?![^;]*(?:slice|shift|trim|truncate|maxTokens|maxHistory))", re.IGNORECASE),
         source_pattern=None,
         message="LLM conversation context accumulates without token limits or sliding window truncation.",
-        remediation="Prune chat context using sliding window truncation or token counting before appending turns."
+        remediation="Prune chat context using sliding window truncation or token counting before appending turns.",
+        instruction="Maintain concise conversation context and avoid unbounded accumulation."
     ),
     SecurityRule(
         id="wide/cwe798-ai-prompt-secret-leak",
@@ -313,7 +332,8 @@ DEFAULT_AGENT_RULES: List[SecurityRule] = [
         pattern=re.compile(r"\b(?:systemPrompt|systemMessage|system_prompt)\s*[:=].*?(?:process\.env\.(?:[A-Z_]*(?:KEY|SECRET|TOKEN|PASSWORD|PASS|AUTH))|apiKey|api_key|secret)", re.IGNORECASE),
         source_pattern=None,
         message="Sensitive secrets or private API credentials embedded in prompt context.",
-        remediation="Strip private credentials from prompt text and provide secrets through isolated backend proxy channels."
+        remediation="Strip private credentials from prompt text and provide secrets through isolated backend proxy channels.",
+        instruction="Never include secrets, API keys, private tokens, or credentials in prompt context or output."
     ),
     SecurityRule(
         id="wide/cwe829-ai-unvalidated-patch-apply",
@@ -324,6 +344,7 @@ DEFAULT_AGENT_RULES: List[SecurityRule] = [
         pattern=re.compile(r"\b(?:applyPatch|gitApply|applyDiff|writePatch)\s*\(\s*(?:aiPatch|llmResponse|output\.patch|modelDiff)", re.IGNORECASE),
         source_pattern=None,
         message="Applying LLM-generated patch directly to codebase without path traversal or integrity checks.",
-        remediation="Validate destination file paths are strictly within workspace bounds and run static scans before applying patches."
+        remediation="Validate destination file paths are strictly within workspace bounds and run static scans before applying patches.",
+        instruction="Always inspect relevant files before modifying them, validate bounds, and verify patch integrity."
     )
 ]

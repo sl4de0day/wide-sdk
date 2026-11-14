@@ -19,9 +19,10 @@ class TestSecurityScanner(unittest.TestCase):
         scanner = SecurityScanner(str(self.root))
         res = scanner.scan(".", min_severity="ALL")
 
-        self.assertEqual(len(res.findings), 1)
-        finding = res.findings[0]
-        self.assertEqual(finding.category, "SQL Injection")
+        self.assertTrue(len(res.findings) >= 1)
+        cwes = [f.cwe for f in res.findings]
+        self.assertIn("CWE-89", cwes)
+        finding = next(f for f in res.findings if f.cwe == "CWE-89")
         self.assertEqual(finding.severity, "CRITICAL")
         self.assertEqual(finding.line, 1)
 

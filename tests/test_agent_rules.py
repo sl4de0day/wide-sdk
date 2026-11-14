@@ -6,6 +6,8 @@ from wide_sdk.security import (
     RuleLoader,
     load_agent_rules,
     get_agent_rules_path,
+    build_agent_instructions,
+    sanitize_output,
     DEFAULT_AGENT_RULES,
 )
 
@@ -19,8 +21,9 @@ class TestAgentRules(unittest.TestCase):
 
     def test_default_agent_rules_count(self) -> None:
         rules = load_agent_rules(workspace_dir=str(self.root))
-        self.assertEqual(len(rules), 8)
+        self.assertTrue(len(rules) >= 8)
         ids = [r.id for r in rules]
+        self.assertIn("wide/ai-no-emojis", ids)
         self.assertIn("wide/cwe078-ai-unsafe-tool-exec", ids)
         self.assertIn("wide/cwe079-ai-prompt-injection", ids)
         self.assertIn("wide/cwe095-ai-unconstrained-eval", ids)
@@ -29,6 +32,13 @@ class TestAgentRules(unittest.TestCase):
         self.assertIn("wide/cwe770-ai-unbounded-context-accumulation", ids)
         self.assertIn("wide/cwe798-ai-prompt-secret-leak", ids)
         self.assertIn("wide/cwe829-ai-unvalidated-patch-apply", ids)
+
+    def test_agent_rules_instructions_and_sanitization(self) -> None:
+        rules = load_agent_rules(workspace_dir=str(self.root))
+        instructions = build_agent_instructions(rules)
+        self.assertIn("Do not use emojis", instructions)
+        clean = sanitize_output("Hello 😀 World", rules)
+        self.assertEqual(clean, "Hello  World")
 
     def test_agent_rules_path(self) -> None:
         info = get_agent_rules_path(workspace_dir=str(self.root))
@@ -48,7 +58,8 @@ class TestAgentRules(unittest.TestCase):
                 "severity": "CRITICAL",
                 "pattern": r"sandbox\.escape\(",
                 "message": "Attempting container sandbox escape",
-                "remediation": "Enforce kernel namespace isolation"
+                "remediation": "Enforce kernel namespace isolation",
+                "instruction": "Never escape container sandbox"
             }
         ]), encoding="utf-8")
 

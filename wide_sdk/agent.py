@@ -11,7 +11,7 @@ from .decision import CommitmentGate
 from .security.loader import RuleLoader
 from .security.rules import SecurityRule
 
-DEFAULT_SYSTEM_PROMPT = """You are Wide Agent, an autonomous security-first AI coding and penetration testing assistant.
+BASE_SYSTEM_PROMPT = """You are Wide Agent, an autonomous security-first AI coding and penetration testing assistant.
 You operate programmatically via Wide SDK.
 
 Your capabilities:
@@ -23,9 +23,13 @@ Your capabilities:
 - Generate targeted offensive security payloads (generate_payloads) for penetration testing.
 - Autonomously navigate, interact with, click, fill forms, and extract content from websites using browser tools (browser_navigate, browser_click, browser_type, browser_extract, browser_screenshot, browser_close).
 - Keep your answers concise, practical, and action-oriented.
-- Do not use emojis anywhere in your responses or generated code. Never output emojis under any circumstances.
-- Always inspect relevant files before modifying them.
 - When fixing security vulnerabilities, provide clean, secure, production-grade solutions."""
+
+def build_agent_system_prompt(rules: Optional[List[SecurityRule]] = None) -> str:
+    instructions = RuleLoader.build_agent_instructions(rules)
+    if not instructions:
+        return BASE_SYSTEM_PROMPT
+    return f"{BASE_SYSTEM_PROMPT}\n\nEcosystem Agent Guardrails (wide-rules):\n{instructions}"
 
 class Agent:
     def __init__(
@@ -41,7 +45,6 @@ class Agent:
     ) -> None:
         self.provider = provider
         self.working_directory = os.path.abspath(working_directory)
-        self.system_prompt = system_prompt or DEFAULT_SYSTEM_PROMPT
         self.tools = dict(tools or DEFAULT_TOOLS)
         self.max_iterations = max_iterations
         self.context_manager = ContextManager()
@@ -49,6 +52,7 @@ class Agent:
         self.on_tool_call = on_tool_call
         self.on_tool_result = on_tool_result
         self.agent_rules = RuleLoader.load_agent_rules(workspace_dir=self.working_directory)
+        self.system_prompt = system_prompt or build_agent_system_prompt(self.agent_rules)
 
         self.messages: List[ChatMessage] = [
             ChatMessage(role="system", content=self.system_prompt)
@@ -59,6 +63,9 @@ class Agent:
 
     def reload_agent_rules(self) -> List[SecurityRule]:
         self.agent_rules = RuleLoader.load_agent_rules(workspace_dir=self.working_directory)
+        self.system_prompt = build_agent_system_prompt(self.agent_rules)
+        if self.messages and self.messages[0].role == "system":
+            self.messages[0].content = self.system_prompt
         return self.agent_rules
 
     def register_tool(self, tool: BaseTool) -> None:
@@ -84,7 +91,7 @@ class Agent:
 
             content, tool_calls = self.provider.chat(self.messages, tool_defs)
             if content:
-                content = re.sub(r"[\U00010000-\U0010ffff\u2600-\u26ff\u2700-\u27bf\u2300-\u23ff]", "", content)
+                content = RuleLoader.sanitize_output(content, self.agent_rules)
             final_text = content
 
             if content and self.on_thought:
