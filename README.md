@@ -20,12 +20,15 @@
 
 ## Overview
 
-Wide SDK allows Python developers to programmatically build, customize, and orchestrate autonomous AI coding and penetration testing agents with native Wide security tooling.
+Wide SDK allows Python developers to programmatically build, customize, and orchestrate autonomous AI coding, database analysis, and penetration testing agents with native Wide security tooling.
 
-- **Autonomous Agent Loop:** Full ReAct (Reasoning and Action) loop with dynamic context compaction and execution limits.
-- **Native SAST Engine:** Programmatic access to Wide's 20+ vulnerability inspection rules (SQLi, XSS, SSRF, Command Injection, XXE, Deserialization, Hardcoded Secrets).
+- **Autonomous Agent Loop:** Full ReAct (Reasoning and Action) loop with dynamic context compaction, execution limits, and sub-70ms lazy import times.
+- **Native SAST Engine:** Programmatic access to Wide's 729 curated vulnerability inspection rules, offline OSV advisory bundles, and SHA256SUMS-verified rule synchronization.
+- **Database 2.0 Client:** Programmatic inspection, querying, query history tracking, multi-format export (CSV, JSON, SQL INSERT), and Mermaid ERD generation for SQLite, PostgreSQL, MySQL, and Redis.
+- **Real CDP Browser Controller:** Headless and headed Chromium browser automation supporting element ref interaction, HAR 1.2 traffic capture with sensitive header redaction, stealth evasion mode, and context manager lifecycle (`with BrowserController()`).
+- **DecisionCore Multi-Agent Primitives:** Algorithmic multi-agent consensus, dwell gates, lease claim tables, and candidate patch scoring (`BarrierBudget`, `WeightedScorer`, `ClaimTable`, `PluralityConsensus`, `CommitmentGate`).
 - **Security Fuzzing and Payloads:** Built-in web endpoint fuzzer and attack vector generator for automated verification.
-- **Multi-Provider Architecture:** Pluggable LLM backends supporting Ollama (local offline), Google Gemini, Anthropic Claude, and OpenAI/DeepSeek.
+- **Multi-Provider Architecture:** Pluggable LLM backends supporting Ollama (local offline), Google Gemini, Anthropic Claude, and OpenAI/DeepSeek with connection pooling and automated retries.
 - **Custom Tool Ecosystem:** Extensible `@tool` interface with automatic JSON Schema generation from Python function signatures and type hints.
 
 ## Installation
