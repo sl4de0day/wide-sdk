@@ -1,9 +1,7 @@
-import json
-import urllib.request
-import urllib.error
-from typing import List, Tuple, Optional
+from typing import Any, Dict, List, Tuple, Optional
 from ..types import ChatMessage, ToolDefinition, ToolCall
 from .base import BaseProvider
+from .http import post_json_with_retry
 
 class OllamaProvider(BaseProvider):
     name = "ollama"
@@ -17,10 +15,24 @@ class OllamaProvider(BaseProvider):
         messages: List[ChatMessage],
         tools: List[ToolDefinition]
     ) -> Tuple[str, Optional[List[ToolCall]]]:
-        formatted_messages = [
-            {"role": m.role, "content": m.content}
-            for m in messages
-        ]
+        formatted_messages: List[Dict[str, Any]] = []
+        for m in messages:
+            if m.role == "tool":
+                item: Dict[str, Any] = {"role": "tool", "content": m.content}
+                if m.name:
+                    item["name"] = m.name
+                formatted_messages.append(item)
+            elif m.role == "assistant" and m.tool_calls:
+                formatted_messages.append({
+                    "role": "assistant",
+                    "content": m.content or "",
+                    "tool_calls": [
+                        {"function": {"name": tc.name, "arguments": tc.arguments}}
+                        for tc in m.tool_calls
+                    ],
+                })
+            else:
+                formatted_messages.append({"role": m.role, "content": m.content})
 
         formatted_tools = [
             {
@@ -44,18 +56,14 @@ class OllamaProvider(BaseProvider):
             payload["tools"] = formatted_tools
 
         url = f"{self.base_url}/api/chat"
-        req = urllib.request.Request(
+        data = post_json_with_retry(
             url,
-            data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-            method="POST"
+            payload,
+            {"Content-Type": "application/json"},
+            timeout=120.0,
+            provider_name=f"Ollama ({self.base_url})",
+            max_retries=1,
         )
-
-        try:
-            with urllib.request.urlopen(req, timeout=120.0) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-        except urllib.error.URLError as e:
-            raise RuntimeError(f"Failed to connect to Ollama at {self.base_url}: {str(e)}")
 
         msg = data.get("message", {})
         content = msg.get("content", "")

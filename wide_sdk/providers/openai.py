@@ -1,10 +1,9 @@
 import os
 import json
-import urllib.request
-import urllib.error
 from typing import List, Tuple, Optional
 from ..types import ChatMessage, ToolDefinition, ToolCall
 from .base import BaseProvider
+from .http import post_json_with_retry
 
 class OpenAICompatibleProvider(BaseProvider):
     def __init__(
@@ -75,24 +74,19 @@ class OpenAICompatibleProvider(BaseProvider):
             payload["tools"] = formatted_tools
 
         url = f"{self.base_url}/chat/completions"
-        req = urllib.request.Request(
+        data = post_json_with_retry(
             url,
-            data=json.dumps(payload).encode("utf-8"),
-            headers={
+            payload,
+            {
                 "Content-Type": "application/json",
-                "Authorization": f"Bearer {self.api_key}"
+                "Authorization": f"Bearer {self.api_key}",
             },
-            method="POST"
+            timeout=60.0,
+            provider_name=self.name,
         )
 
-        try:
-            with urllib.request.urlopen(req, timeout=60.0) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-        except urllib.error.HTTPError as e:
-            err_msg = e.read().decode("utf-8") if e.fp else str(e)
-            raise RuntimeError(f"{self.name} API error ({e.code}): {err_msg}")
-
-        choice = data.get("choices", [{}])[0]
+        choices = data.get("choices") or []
+        choice = choices[0] if choices and isinstance(choices[0], dict) else {}
         msg = choice.get("message", {})
         content = msg.get("content") or ""
         tool_calls: List[ToolCall] = []

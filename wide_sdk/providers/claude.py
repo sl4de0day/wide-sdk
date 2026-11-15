@@ -1,10 +1,8 @@
 import os
-import json
-import urllib.request
-import urllib.error
 from typing import List, Tuple, Optional
 from ..types import ChatMessage, ToolDefinition, ToolCall
 from .base import BaseProvider
+from .http import post_json_with_retry
 
 class ClaudeProvider(BaseProvider):
     name = "claude"
@@ -72,23 +70,17 @@ class ClaudeProvider(BaseProvider):
         if anthropic_tools:
             payload["tools"] = anthropic_tools
 
-        req = urllib.request.Request(
+        data = post_json_with_retry(
             "https://api.anthropic.com/v1/messages",
-            data=json.dumps(payload).encode("utf-8"),
-            headers={
+            payload,
+            {
                 "Content-Type": "application/json",
                 "x-api-key": self.api_key,
-                "anthropic-version": "2023-06-01"
+                "anthropic-version": "2023-06-01",
             },
-            method="POST"
+            timeout=60.0,
+            provider_name="Claude",
         )
-
-        try:
-            with urllib.request.urlopen(req, timeout=60.0) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-        except urllib.error.HTTPError as e:
-            err_msg = e.read().decode("utf-8") if e.fp else str(e)
-            raise RuntimeError(f"Claude API error ({e.code}): {err_msg}")
 
         content_blocks = data.get("content", [])
         text_content = ""

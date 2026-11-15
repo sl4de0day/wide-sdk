@@ -4,7 +4,7 @@ from .shell import run_command_tool
 from .search import list_dir_tool, search_files_tool
 from .http import send_http_request_tool
 from .security import run_security_scan_tool, fuzz_endpoint_tool, generate_payloads_tool
-from .db import db_inspect_schema_tool, db_query_tool, db_audit_tool
+from .db import db_inspect_schema_tool, db_query_tool, db_audit_tool, db_export_tool
 from .browser import (
     browser_open_tool,
     browser_navigate_tool,
@@ -21,6 +21,7 @@ from .browser import (
     browser_console_tool,
     browser_cookies_tool,
     browser_eval_tool,
+    browser_export_har_tool,
     browser_close_tool,
 )
 
@@ -38,6 +39,7 @@ DEFAULT_TOOLS = {
     "db_inspect_schema": db_inspect_schema_tool,
     "db_query": db_query_tool,
     "db_audit": db_audit_tool,
+    "db_export": db_export_tool,
     "browser_open": browser_open_tool,
     "browser_navigate": browser_navigate_tool,
     "browser_snapshot": browser_snapshot_tool,
@@ -53,6 +55,7 @@ DEFAULT_TOOLS = {
     "browser_console": browser_console_tool,
     "browser_cookies": browser_cookies_tool,
     "browser_eval": browser_eval_tool,
+    "browser_export_har": browser_export_har_tool,
     "browser_close": browser_close_tool,
 }
 
@@ -72,6 +75,7 @@ __all__ = [
     "db_inspect_schema_tool",
     "db_query_tool",
     "db_audit_tool",
+    "db_export_tool",
     "browser_open_tool",
     "browser_navigate_tool",
     "browser_snapshot_tool",
@@ -87,6 +91,7 @@ __all__ = [
     "browser_console_tool",
     "browser_cookies_tool",
     "browser_eval_tool",
+    "browser_export_har_tool",
     "browser_close_tool",
     "DEFAULT_TOOLS",
 ]

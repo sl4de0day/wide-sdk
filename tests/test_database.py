@@ -11,7 +11,7 @@ from wide_sdk.database import (
     mask_dsn,
     parse_database_target,
 )
-from wide_sdk.tools import db_audit_tool, db_inspect_schema_tool, db_query_tool
+from wide_sdk.tools import db_audit_tool, db_export_tool, db_inspect_schema_tool, db_query_tool
 
 
 class TestDatabase(unittest.TestCase):
@@ -113,6 +113,27 @@ class TestDatabase(unittest.TestCase):
         self.assertTrue(audit_res.success)
         findings = json.loads(audit_res.output)
         self.assertTrue(any(f["severity"] == "CRITICAL" for f in findings))
+
+        export_res = db_export_tool.execute(
+            {"target": "app.sqlite", "sql": "SELECT id, email, password_hash FROM users", "format": "csv", "tableName": "users"},
+            ctx,
+        )
+        self.assertTrue(export_res.success)
+        self.assertIn("alice@example.com", export_res.output)
+        self.assertIn("[REDACTED]", export_res.output)
+
+        hist_file = Path(self.temp_dir.name) / "recent-queries.json"
+        with DatabaseClient(str(self.db_path), read_only=True, history_path=hist_file) as hist_db:
+            hist_db.query("SELECT id, email FROM users")
+            self.assertEqual(len(hist_db.history), 1)
+            self.assertIn("SELECT id, email FROM users", hist_db.history[0].sql)
+            sql_out = hist_db.export_query("SELECT id, email FROM users", fmt="sql", table_name="users")
+            self.assertIn("INSERT INTO", sql_out)
+            erd = hist_db.export_erd()
+            self.assertIn("erDiagram", erd)
+            self.assertIn("invoices }o--|| users", erd)
+            hist_db.clear_history()
+            self.assertEqual(len(hist_db.history), 0)
 
 
 if __name__ == "__main__":

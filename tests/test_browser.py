@@ -1,6 +1,6 @@
 import unittest
 from wide_sdk.browser import BrowserController, DOMElement
-from wide_sdk.browser.controller import _PageHTMLParser
+from wide_sdk.browser.controller import _PageHTMLParser, strip_browser_emojis
 from wide_sdk.tools import DEFAULT_TOOLS
 from wide_sdk.tools.browser import (
     browser_open_tool,
@@ -18,6 +18,7 @@ from wide_sdk.tools.browser import (
     browser_console_tool,
     browser_cookies_tool,
     browser_eval_tool,
+    browser_export_har_tool,
     browser_close_tool,
     get_browser
 )
@@ -140,13 +141,65 @@ class TestBrowser(unittest.TestCase):
             "browser_open", "browser_navigate", "browser_snapshot", "browser_click",
             "browser_type", "browser_press", "browser_hover", "browser_select",
             "browser_scroll", "browser_wait", "browser_extract", "browser_screenshot",
-            "browser_console", "browser_cookies", "browser_eval", "browser_close"
+            "browser_console", "browser_cookies", "browser_eval", "browser_export_har",
+            "browser_close"
         ):
             self.assertIn(name, DEFAULT_TOOLS)
 
         close_res = browser_close_tool.execute({}, ctx)
         self.assertTrue(close_res.success)
         self.assertIn("Browser closed", close_res.output)
+
+    def test_emoji_strip_stealth_and_har_export(self) -> None:
+        import http.server
+        import json
+        import os
+        import threading
+
+        self.assertEqual(strip_browser_emojis("\U0001F680 Wide \u2B50 Lab"), "Wide Lab")
+
+        class _Handler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self) -> None:
+                body = "<html><head><title>\U0001F680 Live Lab</title></head><body>ok</body></html>".encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Set-Cookie", "sid=secret_value")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, format: str, *args: object) -> None:
+                return
+
+        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        prev_env = os.environ.get("WIDE_SDK_BROWSER_HTTP_ONLY")
+        os.environ["WIDE_SDK_BROWSER_HTTP_ONLY"] = "1"
+        try:
+            port = server.server_address[1]
+            ctrl = BrowserController(headless=True)
+            out = ctrl.open(f"http://127.0.0.1:{port}/?a=1", stealth=True)
+            self.assertIn("Page Title: Live Lab", out)
+            self.assertTrue(ctrl.stealth)
+            har = ctrl.export_har()
+            self.assertEqual(har["log"]["version"], "1.2")
+            self.assertEqual(len(har["log"]["entries"]), 1)
+            resp_headers = har["log"]["entries"][0]["response"]["headers"]
+            cookie_vals = [h["value"] for h in resp_headers if h["name"].lower() == "set-cookie"]
+            self.assertEqual(cookie_vals, ["[REDACTED]"])
+            har_tool_res = browser_export_har_tool.execute({}, {"working_directory": "."})
+            self.assertTrue(har_tool_res.success)
+            parsed_har = json.loads(har_tool_res.output)
+            self.assertEqual(parsed_har["log"]["version"], "1.2")
+            ctrl.close()
+        finally:
+            if prev_env is None:
+                os.environ.pop("WIDE_SDK_BROWSER_HTTP_ONLY", None)
+            else:
+                os.environ["WIDE_SDK_BROWSER_HTTP_ONLY"] = prev_env
+            server.shutdown()
+            server.server_close()
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,7 +1,10 @@
+import hashlib
+import io
 import json
 import unittest
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 from wide_sdk.security import (
     RuleLoader,
     load_agent_rules,
@@ -88,6 +91,69 @@ class TestAgentRules(unittest.TestCase):
 
         info = get_agent_rules_path(workspace_dir=str(self.root))
         self.assertEqual(info["workspace"], str(agent_rules_file.resolve()))
+
+    def test_updated_ai_rules_match_canonical_patterns(self) -> None:
+        by_id = {r.id: r for r in DEFAULT_AGENT_RULES}
+        self.assertIsNotNone(by_id["wide/cwe079-ai-prompt-injection"].pattern.search("const prompt = `Hello ${req.body.name}`"))
+        self.assertIsNotNone(by_id["wide/cwe829-ai-unvalidated-patch-apply"].pattern.search("applyPatch(filepath, aiPatch)"))
+
+    def test_update_rules_rejects_missing_checksum(self) -> None:
+        class _FakeResp(io.BytesIO):
+            def __enter__(self) -> "_FakeResp":
+                return self
+            def __exit__(self, *args: object) -> None:
+                self.close()
+
+        def fake_urlopen(req: object, timeout: float = 15.0) -> _FakeResp:
+            url = getattr(req, "full_url", "")
+            if "SHA256SUMS" in url:
+                return _FakeResp(b"0" * 64 + b"  other-file.json\n")
+            return _FakeResp(b"[]")
+
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            with self.assertRaises(ValueError):
+                RuleLoader.update_rules(verify_sha256=True, cache_dir=self.root / "cache")
+
+    def test_update_rules_verifies_valid_checksum(self) -> None:
+        rules_payload = json.dumps({
+            "rules": [
+                {
+                    "id": "wide/test-rule",
+                    "cwe": "CWE-79",
+                    "category": "AI_SECURITY",
+                    "severity": "HIGH",
+                    "pattern": r"danger\(",
+                    "message": "Dangerous call"
+                }
+            ]
+        }).encode("utf-8")
+        osv_payload = b'{"npm": [], "pip": [], "maven": [], "go": []}'
+        sums_payload = (
+            f"{hashlib.sha256(rules_payload).hexdigest()}  rules.json\n"
+            f"{hashlib.sha256(osv_payload).hexdigest()}  osv-bundle.json\n"
+        ).encode("utf-8")
+
+        class _FakeResp(io.BytesIO):
+            def __enter__(self) -> "_FakeResp":
+                return self
+            def __exit__(self, *args: object) -> None:
+                self.close()
+
+        def fake_urlopen(req: object, timeout: float = 15.0) -> _FakeResp:
+            url = getattr(req, "full_url", "")
+            if "SHA256SUMS" in url:
+                return _FakeResp(sums_payload)
+            if "osv-bundle.json" in url:
+                return _FakeResp(osv_payload)
+            return _FakeResp(rules_payload)
+
+        cache_dir = self.root / "cache"
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            count = RuleLoader.update_rules(verify_sha256=True, cache_dir=cache_dir)
+        self.assertEqual(count, 1)
+        parsed = RuleLoader._parse_file(cache_dir / "rules.json")
+        self.assertEqual(len(parsed), 1)
+        self.assertEqual(parsed[0].id, "wide/test-rule")
 
 if __name__ == "__main__":
     unittest.main()

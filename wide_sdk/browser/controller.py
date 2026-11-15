@@ -18,6 +18,91 @@ from html.parser import HTMLParser
 from typing import Any, Dict, List, Optional, Tuple
 
 
+_EMOJI_RE = re.compile(
+    "["
+    "\U0001F1E6-\U0001F1FF"
+    "\U0001F300-\U0001FAFF"
+    "\u231A-\u23FF"
+    "\u2600-\u27BF"
+    "\u2B05-\u2B55"
+    "\uFE0E\uFE0F\u200D\u20E3"
+    "]+"
+)
+
+_MULTI_SPACE_RE = re.compile(r"\s{2,}")
+_DEVTOOLS_WS_RE = re.compile(r"DevTools listening on (ws://[^\s]+)", re.IGNORECASE)
+_URL_SCHEME_RE = re.compile(r"^(?:https?|about|data|file)://", re.IGNORECASE)
+_LOCALHOST_RE = re.compile(r"^(?:localhost|127\.0\.0\.1|\[::1\]|0\.0\.0\.0)(?:[:/]|$)", re.IGNORECASE)
+_AT_REF_RE = re.compile(r"^@?e\d+$")
+_INDEX_REF_RE = re.compile(r"^(?:\[\d+\]|\d+)$")
+_CSS_TAG_ATTR_RE = re.compile(r"^[a-z]+\[")
+
+_HAR_SENSITIVE_HEADERS = {
+    "authorization",
+    "proxy-authorization",
+    "cookie",
+    "set-cookie",
+    "x-api-key",
+    "x-auth-token",
+    "x-csrf-token",
+}
+
+_SDK_STEALTH_INIT_SCRIPT = """(() => {
+  try { Object.defineProperty(navigator, "webdriver", { get: () => undefined, configurable: true }); } catch {}
+  try {
+    if (!navigator.languages || navigator.languages.length === 0) {
+      Object.defineProperty(navigator, "languages", { get: () => ["en-US", "en"], configurable: true });
+    }
+  } catch {}
+  try {
+    if (!navigator.plugins || navigator.plugins.length === 0) {
+      Object.defineProperty(navigator, "plugins", {
+        get: () => [
+          { name: "Chrome PDF Plugin", filename: "internal-pdf-viewer", description: "Portable Document Format" },
+          { name: "Chrome PDF Viewer", filename: "mhjfbmdgcfjbbpaeojofohoefgiehjai", description: "" },
+          { name: "Native Client", filename: "internal-nacl-plugin", description: "" }
+        ],
+        configurable: true
+      });
+    }
+  } catch {}
+  try {
+    if (!window.chrome) {
+      Object.defineProperty(window, "chrome", { value: { runtime: {}, app: { isInstalled: false } }, configurable: true });
+    }
+  } catch {}
+})();"""
+
+
+def strip_browser_emojis(text: str) -> str:
+    cleaned = _EMOJI_RE.sub("", str(text or ""))
+    return _MULTI_SPACE_RE.sub(" ", cleaned).strip()
+
+
+def _redact_har_headers(headers: Any) -> List[Dict[str, str]]:
+    out: List[Dict[str, str]] = []
+    if isinstance(headers, dict):
+        for k, v in headers.items():
+            name = str(k)
+            val = "[REDACTED]" if name.lower() in _HAR_SENSITIVE_HEADERS else str(v if v is not None else "")
+            out.append({"name": name, "value": val})
+    elif isinstance(headers, list):
+        for item in headers:
+            if isinstance(item, dict) and item.get("name"):
+                name = str(item["name"])
+                val = "[REDACTED]" if name.lower() in _HAR_SENSITIVE_HEADERS else str(item.get("value", ""))
+                out.append({"name": name, "value": val})
+    return out
+
+
+def _parse_har_query(url_str: str) -> List[Dict[str, str]]:
+    try:
+        parsed = urllib.parse.urlparse(url_str)
+        return [{"name": k, "value": v} for k, v in urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)]
+    except Exception:
+        return []
+
+
 @dataclass
 class DOMElement:
     index: int
@@ -218,137 +303,149 @@ class _SimpleCDPClient:
         self.sock: Optional[socket.socket] = None
         self.next_id: int = 1
         self.console_entries: List[Dict[str, str]] = []
+        self._network_requests: Dict[str, Dict[str, Any]] = {}
+        self.har_entries: List[Dict[str, Any]] = []
         self.last_status_code: int = 200
         self.load_fired: bool = False
 
-    def connect(self, executable_path: str, headless: bool = True, proxy_url: str = "") -> None:
+    def connect(self, executable_path: str, headless: bool = True, proxy_url: str = "", stealth: bool = False) -> None:
         self.profile_dir = tempfile.mkdtemp(prefix="wide-sdk-cdp-")
-        args = [executable_path]
-        if headless:
-            args.append("--headless=new")
-        args.extend([
-            "--no-first-run",
-            "--no-default-browser-check",
-            "--disable-gpu",
-            "--disable-extensions",
-            "--disable-background-networking",
-            "--remote-debugging-port=0",
-            f"--user-data-dir={self.profile_dir}"
-        ])
-        if proxy_url:
-            args.append(f"--proxy-server={proxy_url}")
-        args.append("about:blank")
+        sock: Optional[socket.socket] = None
+        try:
+            args = [executable_path]
+            if headless:
+                args.append("--headless=new")
+            args.extend([
+                "--no-first-run",
+                "--no-default-browser-check",
+                "--disable-gpu",
+                "--disable-extensions",
+                "--disable-background-networking",
+                "--remote-debugging-port=0",
+                f"--user-data-dir={self.profile_dir}"
+            ])
+            if stealth:
+                args.append("--disable-blink-features=AutomationControlled")
+            if proxy_url:
+                args.append(f"--proxy-server={proxy_url}")
+            args.append("about:blank")
 
-        creation_flags = 0
-        if os.name == "nt" and hasattr(subprocess, "CREATE_NO_WINDOW"):
-            creation_flags = subprocess.CREATE_NO_WINDOW
+            creation_flags = 0
+            if os.name == "nt" and hasattr(subprocess, "CREATE_NO_WINDOW"):
+                creation_flags = subprocess.CREATE_NO_WINDOW
 
-        self.proc = subprocess.Popen(
-            args,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            creationflags=creation_flags
-        )
+            self.proc = subprocess.Popen(
+                args,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                creationflags=creation_flags
+            )
 
-        ws_base_url = ""
-        deadline = time.time() + 15.0
-        assert self.proc.stderr is not None
-        stderr_acc = ""
-        while time.time() < deadline:
-            line_bytes = self.proc.stderr.readline()
-            if not line_bytes:
-                if self.proc.poll() is not None:
-                    break
-                time.sleep(0.05)
-                continue
-            stderr_acc += line_bytes.decode("utf-8", errors="replace")
-            m = re.search(r"DevTools listening on (ws://[^\s]+)", stderr_acc, re.IGNORECASE)
-            if m:
-                ws_base_url = m.group(1)
-                break
-
-        if not ws_base_url:
-            self.dispose()
-            raise RuntimeError("Failed to launch Chromium/Edge DevTools endpoint")
-
-        parsed = urllib.parse.urlparse(ws_base_url)
-        http_base = f"http://{parsed.netloc}"
-        page_ws_url = ""
-
-        for _ in range(25):
-            try:
-                with urllib.request.urlopen(f"{http_base}/json/list", timeout=2) as resp:
-                    targets = json.loads(resp.read().decode("utf-8"))
-                    for t in targets:
-                        if t.get("type") == "page" and t.get("webSocketDebuggerUrl"):
-                            page_ws_url = t["webSocketDebuggerUrl"]
-                            break
-                    if page_ws_url:
+            ws_base_url = ""
+            deadline = time.time() + 15.0
+            assert self.proc.stderr is not None
+            stderr_acc = ""
+            while time.time() < deadline:
+                line_bytes = self.proc.stderr.readline()
+                if not line_bytes:
+                    if self.proc.poll() is not None:
                         break
-            except Exception:
-                pass
-            time.sleep(0.1)
+                    time.sleep(0.05)
+                    continue
+                stderr_acc += line_bytes.decode("utf-8", errors="replace")
+                m = _DEVTOOLS_WS_RE.search(stderr_acc)
+                if m:
+                    ws_base_url = m.group(1)
+                    break
 
-        if not page_ws_url:
+            if not ws_base_url:
+                raise RuntimeError("Failed to launch Chromium/Edge DevTools endpoint")
+
+            parsed = urllib.parse.urlparse(ws_base_url)
+            http_base = f"http://{parsed.netloc}"
+            page_ws_url = ""
+
+            for _ in range(25):
+                try:
+                    with urllib.request.urlopen(f"{http_base}/json/list", timeout=2) as resp:
+                        targets = json.loads(resp.read().decode("utf-8"))
+                        for t in targets:
+                            if t.get("type") == "page" and t.get("webSocketDebuggerUrl"):
+                                page_ws_url = t["webSocketDebuggerUrl"]
+                                break
+                        if page_ws_url:
+                            break
+                except Exception:
+                    pass
+                time.sleep(0.1)
+
+            if not page_ws_url:
+                raise RuntimeError("Could not acquire CDP page target")
+
+            ws_parsed = urllib.parse.urlparse(page_ws_url)
+            host = ws_parsed.hostname or "127.0.0.1"
+            port = ws_parsed.port or 80
+            ws_path = ws_parsed.path or "/"
+            if ws_parsed.query:
+                ws_path += f"?{ws_parsed.query}"
+
+            sock = socket.create_connection((host, port), timeout=float(self.timeout))
+            sock.settimeout(float(self.timeout))
+            ws_key = base64.b64encode(os.urandom(16)).decode("ascii")
+            handshake = (
+                f"GET {ws_path} HTTP/1.1\r\n"
+                f"Host: {host}:{port}\r\n"
+                "Upgrade: websocket\r\n"
+                "Connection: Upgrade\r\n"
+                f"Sec-WebSocket-Key: {ws_key}\r\n"
+                "Sec-WebSocket-Version: 13\r\n\r\n"
+            ).encode("ascii")
+            sock.sendall(handshake)
+
+            header_buf = b""
+            while b"\r\n\r\n" not in header_buf:
+                chunk = sock.recv(4096)
+                if not chunk:
+                    raise RuntimeError("CDP WebSocket handshake closed")
+                header_buf += chunk
+
+            header_text = header_buf.split(b"\r\n\r\n", 1)[0].decode("latin-1")
+            if " 101 " not in header_text:
+                raise RuntimeError(f"CDP WebSocket handshake rejected: {header_text.splitlines()[0]}")
+
+            expected_accept = base64.b64encode(
+                hashlib.sha1((ws_key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode("ascii")).digest()
+            ).decode("ascii")
+            if expected_accept not in header_text:
+                raise RuntimeError("CDP WebSocket Sec-WebSocket-Accept mismatch")
+
+            self.sock = sock
+            sock = None
+            self._leftover = header_buf.split(b"\r\n\r\n", 1)[1]
+
+            self.send("Page.enable")
+            self.send("Runtime.enable")
+            self.send("Network.enable")
+            if stealth:
+                try:
+                    self.send("Page.addScriptToEvaluateOnNewDocument", {"source": _SDK_STEALTH_INIT_SCRIPT})
+                except Exception:
+                    pass
+            self.send("Emulation.setDeviceMetricsOverride", {
+                "width": 1280,
+                "height": 800,
+                "deviceScaleFactor": 1,
+                "mobile": False
+            })
+        except Exception:
+            if sock is not None:
+                try:
+                    sock.close()
+                except Exception:
+                    pass
             self.dispose()
-            raise RuntimeError("Could not acquire CDP page target")
-
-        ws_parsed = urllib.parse.urlparse(page_ws_url)
-        host = ws_parsed.hostname or "127.0.0.1"
-        port = ws_parsed.port or 80
-        ws_path = ws_parsed.path or "/"
-        if ws_parsed.query:
-            ws_path += f"?{ws_parsed.query}"
-
-        sock = socket.create_connection((host, port), timeout=float(self.timeout))
-        sock.settimeout(float(self.timeout))
-        ws_key = base64.b64encode(os.urandom(16)).decode("ascii")
-        handshake = (
-            f"GET {ws_path} HTTP/1.1\r\n"
-            f"Host: {host}:{port}\r\n"
-            "Upgrade: websocket\r\n"
-            "Connection: Upgrade\r\n"
-            f"Sec-WebSocket-Key: {ws_key}\r\n"
-            "Sec-WebSocket-Version: 13\r\n\r\n"
-        ).encode("ascii")
-        sock.sendall(handshake)
-
-        header_buf = b""
-        while b"\r\n\r\n" not in header_buf:
-            chunk = sock.recv(4096)
-            if not chunk:
-                sock.close()
-                self.dispose()
-                raise RuntimeError("CDP WebSocket handshake closed")
-            header_buf += chunk
-
-        header_text = header_buf.split(b"\r\n\r\n", 1)[0].decode("latin-1")
-        if " 101 " not in header_text:
-            sock.close()
-            self.dispose()
-            raise RuntimeError(f"CDP WebSocket handshake rejected: {header_text.splitlines()[0]}")
-
-        expected_accept = base64.b64encode(
-            hashlib.sha1((ws_key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode("ascii")).digest()
-        ).decode("ascii")
-        if expected_accept not in header_text:
-            sock.close()
-            self.dispose()
-            raise RuntimeError("CDP WebSocket Sec-WebSocket-Accept mismatch")
-
-        self.sock = sock
-        self._leftover = header_buf.split(b"\r\n\r\n", 1)[1]
-
-        self.send("Page.enable")
-        self.send("Runtime.enable")
-        self.send("Network.enable")
-        self.send("Emulation.setDeviceMetricsOverride", {
-            "width": 1280,
-            "height": 800,
-            "deviceScaleFactor": 1,
-            "mobile": False
-        })
+            raise
 
     def _recv_exact(self, n: int) -> bytes:
         assert self.sock is not None
@@ -418,11 +515,78 @@ class _SimpleCDPClient:
         params = msg.get("params", {}) or {}
         if method == "Page.loadEventFired":
             self.load_fired = True
+        elif method == "Network.requestWillBeSent":
+            req_id = params.get("requestId")
+            req = params.get("request")
+            if req_id and isinstance(req, dict):
+                wall = params.get("wallTime")
+                started_dt = (
+                    time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(float(wall)))
+                    if isinstance(wall, (int, float))
+                    else time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+                )
+                self._network_requests[str(req_id)] = {
+                    "startedDateTime": started_dt,
+                    "startTimestamp": float(params.get("timestamp") or 0.0),
+                    "request": req,
+                    "response": None,
+                    "endTimestamp": float(params.get("timestamp") or 0.0),
+                }
         elif method == "Network.responseReceived":
             if params.get("type") == "Document":
                 status = (params.get("response") or {}).get("status")
                 if isinstance(status, int):
                     self.last_status_code = status
+            req_id = str(params.get("requestId") or "")
+            if req_id and req_id in self._network_requests:
+                self._network_requests[req_id]["response"] = params.get("response") or {}
+                self._network_requests[req_id]["endTimestamp"] = float(params.get("timestamp") or 0.0)
+        elif method in ("Network.loadingFinished", "Network.loadingFailed"):
+            req_id = str(params.get("requestId") or "")
+            rec = self._network_requests.pop(req_id, None)
+            if rec:
+                req = rec.get("request") or {}
+                req_url = str(req.get("url") or "")
+                if not req_url.startswith(("data:", "blob:")):
+                    start_ts = float(rec.get("startTimestamp") or 0.0)
+                    end_ts = float(params.get("timestamp") or rec.get("endTimestamp") or start_ts)
+                    elapsed_ms = int(round(max(0.0, (end_ts - start_ts) * 1000))) if start_ts > 0 else 0
+                    resp = rec.get("response") or {}
+                    failed_text = str(params.get("errorText") or "Failed") if method == "Network.loadingFailed" else ""
+                    encoded_len = int(params.get("encodedDataLength") or resp.get("encodedDataLength") or 0)
+                    self.har_entries.append({
+                        "pageref": "page_1",
+                        "startedDateTime": rec.get("startedDateTime") or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                        "time": elapsed_ms,
+                        "request": {
+                            "method": str(req.get("method") or "GET"),
+                            "url": req_url,
+                            "httpVersion": str(resp.get("protocol") or "HTTP/1.1"),
+                            "cookies": [],
+                            "headers": _redact_har_headers(req.get("headers")),
+                            "queryString": _parse_har_query(req_url),
+                            "headersSize": -1,
+                            "bodySize": len(str(req.get("postData") or "").encode("utf-8")),
+                        },
+                        "response": {
+                            "status": int(resp.get("status") or 0),
+                            "statusText": failed_text or str(resp.get("statusText") or ""),
+                            "httpVersion": str(resp.get("protocol") or "HTTP/1.1"),
+                            "cookies": [],
+                            "headers": _redact_har_headers(resp.get("headers")),
+                            "content": {
+                                "size": encoded_len,
+                                "mimeType": str(resp.get("mimeType") or "x-unknown"),
+                            },
+                            "redirectURL": "",
+                            "headersSize": -1,
+                            "bodySize": encoded_len,
+                        },
+                        "cache": {},
+                        "timings": {"send": 0, "wait": elapsed_ms, "receive": 0},
+                    })
+                    if len(self.har_entries) > 500:
+                        self.har_entries = self.har_entries[-500:]
         elif method == "Runtime.consoleAPICalled":
             args = params.get("args") or []
             text_parts = [str(a.get("value", a.get("description", ""))) for a in args if a]
@@ -521,19 +685,28 @@ atexit.register(_cleanup_all_controllers)
 
 
 class BrowserController:
-    def __init__(self, headless: bool = True, timeout: int = 15) -> None:
+    def __init__(self, headless: bool = True, timeout: int = 15, stealth: bool = False) -> None:
         self.headless = headless
         self.timeout = timeout
+        self.stealth = stealth
         self.state = BrowserState()
         self.form_inputs: Dict[str, str] = {}
         self.console_buffer: List[Dict[str, str]] = []
         self.cookie_jar: Dict[str, str] = {}
+        self._har_entries: List[Dict[str, Any]] = []
+        self._har_started_at: str = ""
         self._cdp: Optional[_SimpleCDPClient] = None
         self._pw: Any = None
         self._pw_browser: Any = None
         self._pw_context: Any = None
         self._pw_page: Any = None
-        self._user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Wide/0.4141126"
+        self._user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Wide/0.5151126"
+
+    def __enter__(self) -> "BrowserController":
+        return self
+
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        self.close()
 
     def find_system_browser_executable(self) -> Optional[str]:
         candidates: List[str] = []
@@ -575,9 +748,9 @@ class BrowserController:
         trimmed = url.strip()
         if not trimmed or trimmed == "about:blank":
             return "about:blank"
-        if re.match(r"^(?:https?|about|data|file)://", trimmed, re.IGNORECASE):
+        if _URL_SCHEME_RE.match(trimmed):
             return trimmed
-        scheme = "http://" if re.match(r"^(?:localhost|127\.0\.0\.1|\[::1\]|0\.0\.0\.0)(?:[:/]|$)", trimmed, re.IGNORECASE) else "https://"
+        scheme = "http://" if _LOCALHOST_RE.match(trimmed) else "https://"
         return scheme + trimmed
 
     def _push_console(self, level: str, text: str) -> None:
@@ -588,6 +761,51 @@ class BrowserController:
         })
         if len(self.console_buffer) > 200:
             self.console_buffer.pop(0)
+
+    def _record_pw_request(self, req: Any) -> None:
+        try:
+            req_url = str(req.url or "")
+            if req_url.startswith(("data:", "blob:")):
+                return
+            resp = req.response()
+            timing = req.timing if isinstance(req.timing, dict) else {}
+            end_ms = timing.get("responseEnd", 0)
+            elapsed_ms = int(round(end_ms)) if isinstance(end_ms, (int, float)) and end_ms > 0 else 0
+            req_headers = req.headers or {}
+            resp_headers = resp.headers if resp is not None and getattr(resp, "headers", None) else {}
+            mime_type = resp_headers.get("content-type", "x-unknown") if isinstance(resp_headers, dict) else "x-unknown"
+            self._har_entries.append({
+                "pageref": "page_1",
+                "startedDateTime": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "time": elapsed_ms,
+                "request": {
+                    "method": str(req.method or "GET"),
+                    "url": req_url,
+                    "httpVersion": "HTTP/1.1",
+                    "cookies": [],
+                    "headers": _redact_har_headers(req_headers),
+                    "queryString": _parse_har_query(req_url),
+                    "headersSize": -1,
+                    "bodySize": 0,
+                },
+                "response": {
+                    "status": int(resp.status) if resp is not None else 0,
+                    "statusText": str(resp.status_text or "") if resp is not None else "",
+                    "httpVersion": "HTTP/1.1",
+                    "cookies": [],
+                    "headers": _redact_har_headers(resp_headers),
+                    "content": {"size": 0, "mimeType": str(mime_type)},
+                    "redirectURL": "",
+                    "headersSize": -1,
+                    "bodySize": 0,
+                },
+                "cache": {},
+                "timings": {"send": 0, "wait": elapsed_ms, "receive": 0},
+            })
+            if len(self._har_entries) > 500:
+                self._har_entries = self._har_entries[-500:]
+        except Exception:
+            pass
 
     def _ensure_live_session(self) -> str:
         if self._pw_page is not None:
@@ -600,6 +818,8 @@ class BrowserController:
 
         if self not in _ACTIVE_CONTROLLERS:
             _ACTIVE_CONTROLLERS.append(self)
+        if not self._har_started_at:
+            self._har_started_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
         exe = self.find_system_browser_executable()
         proxy_url = os.environ.get("WIDE_CATCHER_PROXY") or os.environ.get("HTTPS_PROXY") or os.environ.get("HTTP_PROXY") or ""
@@ -607,19 +827,32 @@ class BrowserController:
         try:
             from playwright.sync_api import sync_playwright
             self._pw = sync_playwright().start()
+            pw_args = ["--no-sandbox", "--disable-gpu"]
+            if self.stealth:
+                pw_args.append("--disable-blink-features=AutomationControlled")
             launch_kwargs: Dict[str, Any] = {
                 "headless": self.headless,
-                "args": ["--no-sandbox", "--disable-gpu"]
+                "args": pw_args
             }
             if exe:
                 launch_kwargs["executable_path"] = exe
             if proxy_url:
                 launch_kwargs["proxy"] = {"server": proxy_url}
             self._pw_browser = self._pw.chromium.launch(**launch_kwargs)
-            self._pw_context = self._pw_browser.new_context(viewport={"width": 1280, "height": 800})
+            ctx_kwargs: Dict[str, Any] = {"viewport": {"width": 1280, "height": 800}}
+            if self.stealth:
+                ctx_kwargs["user_agent"] = (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                    "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+                )
+                ctx_kwargs["locale"] = "en-US"
+            self._pw_context = self._pw_browser.new_context(**ctx_kwargs)
+            if self.stealth:
+                self._pw_context.add_init_script(_SDK_STEALTH_INIT_SCRIPT)
             self._pw_page = self._pw_context.new_page()
             self._pw_page.on("console", lambda msg: self._push_console(msg.type, msg.text))
             self._pw_page.on("pageerror", lambda err: self._push_console("error", str(err)))
+            self._pw_page.on("requestfinished", self._record_pw_request)
             self.state.mode = "playwright"
             return "playwright"
         except Exception:
@@ -628,7 +861,7 @@ class BrowserController:
         if exe:
             try:
                 client = _SimpleCDPClient(timeout=self.timeout)
-                client.connect(exe, headless=self.headless, proxy_url=proxy_url)
+                client.connect(exe, headless=self.headless, proxy_url=proxy_url, stealth=self.stealth)
                 self._cdp = client
                 self.state.mode = "cdp"
                 return "cdp"
@@ -670,7 +903,7 @@ class BrowserController:
             return
 
         self.state.url = str(snap.get("url") or self.state.url)
-        self.state.title = str(snap.get("title") or self.state.url)
+        self.state.title = strip_browser_emojis(str(snap.get("title") or "")) or self.state.url
         self.state.text_content = str(snap.get("textContent") or "")
         self.state.raw_html = str(snap.get("rawHtml") or "")
         raw_elements = snap.get("elements") or []
@@ -695,7 +928,7 @@ class BrowserController:
         clean = str(target or "").strip()
         lower = clean.lower()
 
-        if re.match(r"^@?e\d+$", lower):
+        if _AT_REF_RE.match(lower):
             norm_ref = lower if lower.startswith("@") else f"@{lower}"
             for el in self.state.elements:
                 el_ref = (el.ref or f"@e{el.index}").lower()
@@ -703,7 +936,7 @@ class BrowserController:
                     return norm_ref, el, f'[data-wide-ref="{norm_ref}"]'
             return norm_ref, None, f'[data-wide-ref="{norm_ref}"]'
 
-        if re.match(r"^(?:\[\d+\]|\d+)$", clean):
+        if _INDEX_REF_RE.match(clean):
             idx = int(clean.strip("[]"))
             for el in self.state.elements:
                 if el.index == idx:
@@ -722,16 +955,20 @@ class BrowserController:
                 ref = el.ref or f"@e{el.index}"
                 return ref, el, f'[data-wide-ref="{ref}"]'
 
-        if clean.startswith(("#", ".", "[")) or re.match(r"^[a-z]+\[", lower):
+        if clean.startswith(("#", ".", "[")) or _CSS_TAG_ATTR_RE.match(lower):
             return None, None, clean
 
         return None, None, None
 
-    def open(self, url: Optional[str] = None) -> str:
+    def open(self, url: Optional[str] = None, stealth: Optional[bool] = None) -> str:
+        if stealth is not None and bool(stealth) != self.stealth:
+            self._cleanup_live_drivers()
+            self.stealth = bool(stealth)
         mode = self._ensure_live_session()
         if url and url.strip():
             return self.navigate(url)
-        return f"Browser session initialized (engine: {mode}, url: {self.state.url})."
+        suffix = ", stealth: on" if self.stealth else ""
+        return f"Browser session initialized (engine: {mode}, url: {self.state.url}{suffix})."
 
     def navigate(self, url: str) -> str:
         url = self._normalize_url(url)
@@ -768,8 +1005,14 @@ class BrowserController:
             except Exception as e:
                 return f"Navigation failed: {str(e)}"
 
+        user_agent = (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+            if self.stealth
+            else self._user_agent
+        )
         headers = {
-            "User-Agent": self._user_agent,
+            "User-Agent": user_agent,
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
             "Accept-Language": "en-US,en;q=0.9"
         }
@@ -777,19 +1020,64 @@ class BrowserController:
             headers["Cookie"] = "; ".join(f"{k}={v}" for k, v in self.cookie_jar.items())
 
         req = urllib.request.Request(url, headers=headers)
+        started_at = time.time()
+        started_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(started_at))
+        if not self._har_started_at:
+            self._har_started_at = started_iso
+        resp_headers: Dict[str, str] = {}
+        resp_status = 0
 
         try:
             with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-                self.state.status_code = resp.status
+                resp_status = resp.status
+                self.state.status_code = resp_status
                 self.state.url = resp.geturl()
+                resp_headers = {str(k): str(v) for k, v in resp.headers.items()}
                 content_bytes = resp.read()
                 raw_html = content_bytes.decode("utf-8", errors="replace")
         except urllib.error.HTTPError as e:
-            self.state.status_code = e.code
+            resp_status = e.code
+            self.state.status_code = resp_status
             self.state.url = url
+            resp_headers = {str(k): str(v) for k, v in (e.headers.items() if e.headers else [])}
             raw_html = e.read().decode("utf-8", errors="replace") if e.fp else ""
         except Exception as e:
             return f"Navigation failed: {str(e)}"
+
+        elapsed_ms = int(round(max(0.0, (time.time() - started_at) * 1000)))
+        self._har_entries.append({
+            "pageref": "page_1",
+            "startedDateTime": started_iso,
+            "time": elapsed_ms,
+            "request": {
+                "method": "GET",
+                "url": self.state.url,
+                "httpVersion": "HTTP/1.1",
+                "cookies": [],
+                "headers": _redact_har_headers(headers),
+                "queryString": _parse_har_query(self.state.url),
+                "headersSize": -1,
+                "bodySize": 0,
+            },
+            "response": {
+                "status": resp_status,
+                "statusText": "",
+                "httpVersion": "HTTP/1.1",
+                "cookies": [],
+                "headers": _redact_har_headers(resp_headers),
+                "content": {
+                    "size": len(raw_html.encode("utf-8")),
+                    "mimeType": str(resp_headers.get("Content-Type") or resp_headers.get("content-type") or "text/html"),
+                },
+                "redirectURL": "",
+                "headersSize": -1,
+                "bodySize": len(raw_html.encode("utf-8")),
+            },
+            "cache": {},
+            "timings": {"send": 0, "wait": elapsed_ms, "receive": 0},
+        })
+        if len(self._har_entries) > 500:
+            self._har_entries = self._har_entries[-500:]
 
         self.state.raw_html = raw_html
         self.state.history.append(self.state.url)
@@ -801,7 +1089,7 @@ class BrowserController:
         except Exception:
             pass
 
-        self.state.title = parser.title.strip() or self.state.url
+        self.state.title = strip_browser_emojis(parser.title) or self.state.url
         self.state.elements = parser.elements
         self.state.text_content = "\n".join(parser.text_parts[:100])
 
@@ -1195,11 +1483,37 @@ class BrowserController:
 
         return "\n".join(out)
 
+    def export_har(self, url_filter: str = "", limit: int = 100) -> Dict[str, Any]:
+        cdp_entries = self._cdp.har_entries if self._cdp is not None else []
+        combined = list(cdp_entries) + list(self._har_entries)
+        filt = str(url_filter or "").strip().lower()
+        if filt:
+            combined = [e for e in combined if filt in str((e.get("request") or {}).get("url") or "").lower()]
+        capped = max(1, min(500, int(limit or 100)))
+        return {
+            "log": {
+                "version": "1.2",
+                "creator": {"name": "Wide SDK Browser", "version": "1.0"},
+                "pages": [
+                    {
+                        "startedDateTime": self._har_started_at or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                        "id": "page_1",
+                        "title": strip_browser_emojis(self.state.title or self.state.url or "New Tab") or "New Tab",
+                        "pageTimings": {"onContentLoad": -1, "onLoad": -1},
+                    }
+                ],
+                "entries": combined[-capped:],
+            }
+        }
+
     def close(self) -> str:
         url = self.state.url
         self._cleanup_live_drivers()
         self.console_buffer.clear()
         self.cookie_jar.clear()
+        self._har_entries.clear()
+        self._har_started_at = ""
+        self.stealth = False
         self.state = BrowserState()
         self.form_inputs.clear()
         return f"Browser closed. Session ended for {url}."

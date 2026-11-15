@@ -36,21 +36,36 @@ SQL_ERROR_PATTERNS = [
     re.compile(r"microsoft ole db provider for sql server", re.IGNORECASE)
 ]
 
+def _build_fuzz_request(
+    parsed: urllib.parse.ParseResult,
+    param: str,
+    value: str,
+    method: str,
+) -> urllib.request.Request:
+    headers = {"User-Agent": "Wide-SDK-Agent/1.0"}
+    upper_method = (method or "GET").upper()
+    if upper_method in ("GET", "HEAD"):
+        params = urllib.parse.parse_qs(parsed.query)
+        params[param] = [value]
+        query = urllib.parse.urlencode(params, doseq=True)
+        target_url = urllib.parse.urlunparse((
+            parsed.scheme, parsed.netloc, parsed.path, parsed.params, query, parsed.fragment
+        ))
+        return urllib.request.Request(target_url, headers=headers, method=upper_method)
+
+    target_url = urllib.parse.urlunparse(parsed)
+    headers["Content-Type"] = "application/x-www-form-urlencoded"
+    body = urllib.parse.urlencode({param: value}).encode("utf-8")
+    return urllib.request.Request(target_url, data=body, headers=headers, method=upper_method)
+
+
 def fuzz_endpoint(url: str, param: str, payload_type: str, method: str = "GET") -> FuzzReport:
     payloads = get_payloads_for_type(payload_type)
     if not payloads:
         raise ValueError(f"Unsupported payload type: '{payload_type}'")
 
     parsed = urllib.parse.urlparse(url)
-    baseline_params = urllib.parse.parse_qs(parsed.query)
-    baseline_params[param] = ["testbaselinevalue123"]
-    baseline_query = urllib.parse.urlencode(baseline_params, doseq=True)
-
-    baseline_url = urllib.parse.urlunparse((
-        parsed.scheme, parsed.netloc, parsed.path, parsed.params, baseline_query, parsed.fragment
-    ))
-
-    req = urllib.request.Request(baseline_url, headers={"User-Agent": "Wide-SDK-Agent/1.0"}, method=method)
+    req = _build_fuzz_request(parsed, param, "testbaselinevalue123", method)
     baseline_status = 200
     baseline_body = ""
 
@@ -64,15 +79,7 @@ def fuzz_endpoint(url: str, param: str, payload_type: str, method: str = "GET") 
     findings: List[FuzzFinding] = []
 
     for payload in payloads:
-        p_query_params = urllib.parse.parse_qs(parsed.query)
-        p_query_params[param] = [payload]
-        p_query = urllib.parse.urlencode(p_query_params, doseq=True)
-
-        target_url = urllib.parse.urlunparse((
-            parsed.scheme, parsed.netloc, parsed.path, parsed.params, p_query, parsed.fragment
-        ))
-
-        p_req = urllib.request.Request(target_url, headers={"User-Agent": "Wide-SDK-Agent/1.0"}, method=method)
+        p_req = _build_fuzz_request(parsed, param, payload, method)
 
         try:
             with urllib.request.urlopen(p_req, timeout=10.0) as resp:

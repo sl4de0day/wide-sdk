@@ -1,9 +1,10 @@
+import math
 from typing import Callable, List, Tuple
 
 class Criterion:
     def __init__(self, weight: float, term: Callable[[int], float]) -> None:
-        if weight < 0.0:
-            raise ValueError("weight cannot be negative")
+        if not math.isfinite(weight) or weight < 0.0:
+            raise ValueError("weight must be finite and non-negative")
         if not term:
             raise ValueError("term cannot be null")
         self.weight = weight
@@ -15,14 +16,14 @@ class WeightedScorer:
             raise ValueError("criteria cannot be empty")
         self.criteria: List[Criterion] = list(criteria)
         self.total_weight = sum(c.weight for c in self.criteria)
-        if self.total_weight <= 0.0:
+        if not math.isfinite(self.total_weight) or self.total_weight <= 0.0:
             raise ValueError("total_weight must be positive")
 
     def score(self, candidate: int) -> float:
         s = 0.0
         for c in self.criteria:
             val = c.term(candidate)
-            clamped = max(0.0, min(1.0, val))
+            clamped = 0.0 if not math.isfinite(val) else max(0.0, min(1.0, val))
             s += c.weight * clamped
         return s / self.total_weight
 

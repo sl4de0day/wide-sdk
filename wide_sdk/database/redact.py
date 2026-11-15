@@ -16,6 +16,14 @@ PII_COLUMN_RE = re.compile(
 _DSN_CRED_RE = re.compile(r"([a-zA-Z][a-zA-Z0-9+.-]*://[^:\s/@]+):([^@\s/]+)@")
 
 _SQL_READONLY_RE = re.compile(r"^(SELECT|WITH|SHOW|DESCRIBE|DESC|EXPLAIN)\b", re.IGNORECASE)
+_INTO_OUTFILE_RE = re.compile(r"\bINTO\s+(OUTFILE|DUMPFILE)\b", re.IGNORECASE)
+_PRAGMA_RE = re.compile(r"^PRAGMA\b", re.IGNORECASE)
+_WRITABLE_SCHEMA_RE = re.compile(r"\bwritable_schema\b", re.IGNORECASE)
+_DELETE_STMT_RE = re.compile(r"^\s*DELETE\b", re.IGNORECASE)
+_UPDATE_STMT_RE = re.compile(r"^\s*UPDATE\b", re.IGNORECASE)
+_WHERE_RE = re.compile(r"\bWHERE\b", re.IGNORECASE)
+_TRIVIAL_WHERE_RE = re.compile(r"\bWHERE\s+(1\s*=\s*1|TRUE|NOT\s+FALSE)\s*$", re.IGNORECASE)
+_MULTI_SPACE_RE = re.compile(r"\s+")
 _REDIS_READONLY_CMDS = frozenset({
     "PING", "INFO", "DBSIZE", "SCAN", "TYPE", "TTL", "PTTL", "GET", "MGET",
     "HGET", "HGETALL", "HKEYS", "HLEN", "LRANGE", "LLEN", "LINDEX",
@@ -104,7 +112,7 @@ def strip_sql_comments_and_literals(sql: str) -> str:
 
 def split_sql_statements(sql: str) -> List[str]:
     stripped = strip_sql_comments_and_literals(sql)
-    return [re.sub(r"\s+", " ", part).strip() for part in stripped.split(";") if part.strip()]
+    return [_MULTI_SPACE_RE.sub(" ", part).strip() for part in stripped.split(";") if part.strip()]
 
 
 def is_query_readonly(query: str, kind: str = "sqlite") -> bool:
@@ -120,11 +128,11 @@ def is_query_readonly(query: str, kind: str = "sqlite") -> bool:
         return True
     for stmt in stmts:
         if _SQL_READONLY_RE.match(stmt):
-            if re.search(r"\bINTO\s+(OUTFILE|DUMPFILE)\b", stmt, re.IGNORECASE):
+            if _INTO_OUTFILE_RE.search(stmt):
                 return False
             continue
-        if re.match(r"^PRAGMA\b", stmt, re.IGNORECASE):
-            if "=" in stmt or re.search(r"\bwritable_schema\b", stmt, re.IGNORECASE):
+        if _PRAGMA_RE.match(stmt):
+            if "=" in stmt or _WRITABLE_SCHEMA_RE.search(stmt):
                 return False
             continue
         return False
@@ -145,14 +153,14 @@ def assess_sql_risk(query: str, kind: str = "sqlite") -> Tuple[bool, str]:
         for pat, reason in _DESTRUCTIVE_SQL_PATTERNS:
             if pat.search(stmt):
                 return True, reason
-        if re.match(r"^\s*DELETE\b", stmt, re.IGNORECASE):
-            has_where = bool(re.search(r"\bWHERE\b", stmt, re.IGNORECASE))
-            trivial = bool(re.search(r"\bWHERE\s+(1\s*=\s*1|TRUE|NOT\s+FALSE)\s*$", stmt, re.IGNORECASE))
+        if _DELETE_STMT_RE.match(stmt):
+            has_where = bool(_WHERE_RE.search(stmt))
+            trivial = bool(_TRIVIAL_WHERE_RE.search(stmt))
             if not has_where or trivial:
                 return True, "unconditional DELETE without selective WHERE clause"
-        if re.match(r"^\s*UPDATE\b", stmt, re.IGNORECASE):
-            has_where = bool(re.search(r"\bWHERE\b", stmt, re.IGNORECASE))
-            trivial = bool(re.search(r"\bWHERE\s+(1\s*=\s*1|TRUE|NOT\s+FALSE)\s*$", stmt, re.IGNORECASE))
+        if _UPDATE_STMT_RE.match(stmt):
+            has_where = bool(_WHERE_RE.search(stmt))
+            trivial = bool(_TRIVIAL_WHERE_RE.search(stmt))
             if not has_where or trivial:
                 return True, "unconditional UPDATE without selective WHERE clause"
     return False, ""

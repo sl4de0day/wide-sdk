@@ -57,12 +57,33 @@ class TestDecisionCore(unittest.TestCase):
         self.assertTrue(ok)
         self.assertEqual(best, 0)
 
+    def test_weighted_scorer_guards_non_finite(self) -> None:
+        with self.assertRaises(ValueError):
+            Criterion(float("nan"), lambda c: 0.5)
+        with self.assertRaises(ValueError):
+            Criterion(-0.1, lambda c: 0.5)
+        scorer = WeightedScorer(
+            Criterion(1.0, lambda c: float("nan") if c == 0 else 0.75)
+        )
+        ok, best, score = scorer.try_select(2, 0.5)
+        self.assertTrue(ok)
+        self.assertEqual(best, 1)
+        self.assertEqual(score, 0.75)
+
     def test_barrier(self) -> None:
         barrier = SynchronizationBarrier(4)
         barrier.report_ready(1, 10.0)
         barrier.report_ready(2, 10.5)
         self.assertTrue(barrier.tick(3, 0.6, 5.0, 11.0))
         self.assertTrue(barrier.reached_quorum)
+
+    def test_barrier_zero_now_initialization(self) -> None:
+        barrier = SynchronizationBarrier(4)
+        self.assertFalse(barrier.tick(4, 0.75, 5.0, 0.0))
+        self.assertEqual(barrier.stage_start_time, 0.0)
+        self.assertFalse(barrier.tick(4, 0.75, 5.0, 2.0))
+        self.assertTrue(barrier.tick(4, 0.75, 5.0, 5.0))
+        self.assertFalse(barrier.reached_quorum)
 
 if __name__ == "__main__":
     unittest.main()

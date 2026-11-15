@@ -1,10 +1,8 @@
 import os
-import json
-import urllib.request
-import urllib.error
 from typing import List, Tuple, Optional
 from ..types import ChatMessage, ToolDefinition, ToolCall
 from .base import BaseProvider
+from .http import post_json_with_retry
 
 class GeminiProvider(BaseProvider):
     name = "gemini"
@@ -65,21 +63,22 @@ class GeminiProvider(BaseProvider):
             payload["tools"] = [{"functionDeclarations": function_declarations}]
 
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent?key={self.api_key}"
-        req = urllib.request.Request(
+        data = post_json_with_retry(
             url,
-            data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-            method="POST"
+            payload,
+            {"Content-Type": "application/json"},
+            timeout=60.0,
+            provider_name="Gemini",
         )
 
-        try:
-            with urllib.request.urlopen(req, timeout=60.0) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-        except urllib.error.HTTPError as e:
-            err_msg = e.read().decode("utf-8") if e.fp else str(e)
-            raise RuntimeError(f"Gemini API error ({e.code}): {err_msg}")
+        candidates = data.get("candidates") or []
+        if not candidates:
+            block_reason = (data.get("promptFeedback") or {}).get("blockReason")
+            if block_reason:
+                raise RuntimeError(f"Gemini returned empty candidates (blockReason={block_reason})")
+            return "", None
 
-        candidate = data.get("candidates", [{}])[0]
+        candidate = candidates[0] if isinstance(candidates[0], dict) else {}
         parts = candidate.get("content", {}).get("parts", [])
 
         full_text = ""

@@ -1,4 +1,7 @@
+import csv
 import importlib
+import io
+import json
 import os
 import re
 import shlex
@@ -61,6 +64,17 @@ class QueryResult:
 
 
 @dataclass
+class QueryHistoryEntry:
+    id: str
+    connection: str
+    sql: str
+    elapsed_ms: int
+    row_count: int
+    error: Optional[str] = None
+    ran_at: float = field(default_factory=time.time)
+
+
+@dataclass
 class SchemaColumn:
     name: str
     data_type: str
@@ -91,6 +105,9 @@ class SchemaResult:
     target: str
     tables: List[SchemaTable] = field(default_factory=list)
     redis_info: Optional[Dict[str, Any]] = None
+
+    def to_mermaid_erd(self) -> str:
+        return format_schema_mermaid_erd(self)
 
 
 @dataclass
@@ -211,6 +228,73 @@ def parse_database_target(
     )
 
 
+def _sql_literal(value: Any) -> str:
+    if value is None:
+        return "NULL"
+    if isinstance(value, bool):
+        return "TRUE" if value else "FALSE"
+    if isinstance(value, (int, float)):
+        return str(value)
+    text = json.dumps(value) if isinstance(value, (dict, list)) else str(value)
+    return "'" + text.replace("'", "''") + "'"
+
+
+def export_rows(
+    rows: Sequence[Dict[str, Any]],
+    columns: Optional[Sequence[str]] = None,
+    fmt: Literal["csv", "json", "sql"] = "csv",
+    table_name: str = "query_result",
+    kind: DbKind = "sqlite",
+) -> str:
+    row_list = list(rows)
+    if fmt == "json":
+        return json.dumps(row_list, indent=2, default=str)
+    cols = list(columns) if columns else (list(row_list[0].keys()) if row_list else [])
+    if fmt == "csv":
+        buf = io.StringIO()
+        writer = csv.writer(buf, lineterminator="\n")
+        if cols:
+            writer.writerow(cols)
+        for row in row_list:
+            writer.writerow(["" if row.get(c) is None else row.get(c) for c in cols])
+        return buf.getvalue().rstrip("\n")
+    if fmt == "sql":
+        if not cols or not row_list:
+            return ""
+        q_table = _quote_sql_ident(table_name or "query_result", kind)
+        q_cols = ", ".join(_quote_sql_ident(c, kind) for c in cols)
+        lines: List[str] = []
+        for row in row_list:
+            vals = ", ".join(_sql_literal(row.get(c)) for c in cols)
+            lines.append(f"INSERT INTO {q_table} ({q_cols}) VALUES ({vals});")
+        return "\n".join(lines)
+    raise ValueError(f"Unsupported export format: {fmt}")
+
+
+def format_schema_mermaid_erd(schema: SchemaResult) -> str:
+    if schema.kind == "redis":
+        return f'erDiagram\n  REDIS_STORE {{\n    string target "{schema.target}"\n  }}'
+    lines: List[str] = ["erDiagram"]
+    fk_cols: Dict[str, set] = {}
+    for table in schema.tables:
+        from_id = re.sub(r"[^a-zA-Z0-9_]", "_", table.name) or "table"
+        for fk in table.foreign_keys:
+            fk_cols.setdefault(table.name, set()).add(fk.column)
+            to_id = re.sub(r"[^a-zA-Z0-9_]", "_", fk.ref_table) or "table"
+            lines.append(f'  {from_id} }}o--|| {to_id} : "{fk.column} -> {fk.ref_column}"')
+    for table in schema.tables:
+        t_id = re.sub(r"[^a-zA-Z0-9_]", "_", table.name) or "table"
+        lines.append(f"  {t_id} {{")
+        for col in table.columns:
+            c_type = re.sub(r"[^a-zA-Z0-9_]", "_", col.data_type or "TEXT")
+            c_name = re.sub(r"[^a-zA-Z0-9_]", "_", col.name)
+            flags = [f for f in ("PK" if col.primary_key else "", "FK" if col.name in fk_cols.get(table.name, set()) else "") if f]
+            suffix = f" {','.join(flags)}" if flags else ""
+            lines.append(f"    {c_type} {c_name}{suffix}")
+        lines.append("  }")
+    return "\n".join(lines)
+
+
 class DatabaseClient:
     """Unified parameterized database client for SQLite, PostgreSQL, MySQL, and Redis."""
 
@@ -222,6 +306,7 @@ class DatabaseClient:
         read_only: bool = False,
         environment: DbEnvironment = "local",
         name: Optional[str] = None,
+        history_path: Optional[Union[str, Path]] = None,
     ) -> None:
         if isinstance(target, DatabaseConnectionSpec):
             self.spec = target
@@ -235,6 +320,79 @@ class DatabaseClient:
             )
         self._conn: Any = None
         self._pg_flavor: Optional[str] = None
+        self.history_path: Optional[Path] = Path(history_path) if history_path else None
+        self.history: List[QueryHistoryEntry] = self._load_history_file()
+
+    def _load_history_file(self) -> List[QueryHistoryEntry]:
+        if not self.history_path or not self.history_path.exists():
+            return []
+        try:
+            raw = json.loads(self.history_path.read_text(encoding="utf-8"))
+            if not isinstance(raw, list):
+                return []
+            items: List[QueryHistoryEntry] = []
+            for row in raw[:50]:
+                if isinstance(row, dict) and isinstance(row.get("sql"), str):
+                    items.append(
+                        QueryHistoryEntry(
+                            id=str(row.get("id") or f"{int(time.time() * 1000)}"),
+                            connection=str(row.get("connection") or self.spec.name),
+                            sql=row["sql"],
+                            elapsed_ms=int(row.get("elapsed_ms") or 0),
+                            row_count=int(row.get("row_count") or 0),
+                            error=row.get("error"),
+                            ran_at=float(row.get("ran_at") or time.time()),
+                        )
+                    )
+            return items
+        except Exception:
+            return []
+
+    def _record_history(self, sql: str, elapsed_ms: int, row_count: int, error: Optional[str] = None) -> None:
+        clean_sql = mask_dsn(sql).strip()[:8000]
+        if not clean_sql:
+            return
+        entry = QueryHistoryEntry(
+            id=f"{int(time.time() * 1000)}_{len(self.history)}",
+            connection=self.spec.name,
+            sql=clean_sql,
+            elapsed_ms=elapsed_ms,
+            row_count=row_count,
+            error=mask_dsn(error)[:500] if error else None,
+        )
+        self.history = [entry, *self.history[:49]]
+        if self.history_path:
+            try:
+                self.history_path.parent.mkdir(parents=True, exist_ok=True)
+                self.history_path.write_text(
+                    json.dumps(
+                        [
+                            {
+                                "id": h.id,
+                                "connection": h.connection,
+                                "sql": h.sql,
+                                "elapsed_ms": h.elapsed_ms,
+                                "row_count": h.row_count,
+                                **({"error": h.error} if h.error else {}),
+                                "ran_at": h.ran_at,
+                            }
+                            for h in self.history
+                        ],
+                        indent=2,
+                    ),
+                    encoding="utf-8",
+                )
+            except Exception:
+                pass
+
+    def clear_history(self) -> None:
+        self.history = []
+        if self.history_path:
+            try:
+                self.history_path.parent.mkdir(parents=True, exist_ok=True)
+                self.history_path.write_text("[]", encoding="utf-8")
+            except Exception:
+                pass
 
     def __enter__(self) -> "DatabaseClient":
         self.connect()
@@ -380,11 +538,13 @@ class DatabaseClient:
                     truncated = False
                     rows = [{"result": raw}]
                 cols = list(rows[0].keys()) if rows else []
+                elapsed_ms = int((time.monotonic() - start) * 1000)
+                self._record_history(sql, elapsed_ms, len(rows))
                 return QueryResult(
                     columns=cols,
                     rows=rows,
                     row_count=len(rows),
-                    elapsed_ms=int((time.monotonic() - start) * 1000),
+                    elapsed_ms=elapsed_ms,
                     truncated=truncated,
                 )
 
@@ -410,23 +570,27 @@ class DatabaseClient:
                             rows.append({columns[i]: r[i] for i in range(len(columns))})
                     if redact_secrets:
                         rows = redact_rows(rows, columns=columns)
+                    elapsed_ms = int((time.monotonic() - start) * 1000)
+                    self._record_history(sql, elapsed_ms, len(rows))
                     return QueryResult(
                         columns=columns,
                         rows=rows,
                         row_count=len(rows),
-                        elapsed_ms=int((time.monotonic() - start) * 1000),
+                        elapsed_ms=elapsed_ms,
                         truncated=truncated,
                     )
 
                 if not self.spec.read_only:
                     conn.commit()
                 changes = cur.rowcount if cur.rowcount is not None and cur.rowcount >= 0 else 0
+                elapsed_ms = int((time.monotonic() - start) * 1000)
+                self._record_history(sql, elapsed_ms, changes)
                 return QueryResult(
                     columns=[],
                     rows=[],
                     row_count=0,
                     changes=changes,
-                    elapsed_ms=int((time.monotonic() - start) * 1000),
+                    elapsed_ms=elapsed_ms,
                 )
             finally:
                 try:
@@ -435,9 +599,27 @@ class DatabaseClient:
                     pass
         except Exception as exc:
             msg = mask_dsn(str(exc))
+            self._record_history(sql, int((time.monotonic() - start) * 1000), 0, error=msg)
             if type(exc) is Exception:
                 raise Exception(msg) from None
             raise type(exc)(msg) from None if isinstance(exc, (PermissionError, ValueError)) else exc
+
+    def export_query(
+        self,
+        sql: str,
+        *,
+        fmt: Literal["csv", "json", "sql"] = "csv",
+        table_name: str = "query_result",
+        max_rows: int = 5000,
+        redact_secrets: bool = True,
+    ) -> str:
+        if not is_query_readonly(sql, self.spec.kind):
+            raise PermissionError("Export only permits read-only SELECT queries.")
+        res = self.query(sql, max_rows=max_rows, redact_secrets=redact_secrets)
+        return export_rows(res.rows, columns=res.columns, fmt=fmt, table_name=table_name, kind=self.spec.kind)
+
+    def export_erd(self) -> str:
+        return format_schema_mermaid_erd(self.inspect_schema())
 
     def execute(
         self,
@@ -475,40 +657,46 @@ class DatabaseClient:
         tables: List[SchemaTable] = []
         if self.spec.kind == "sqlite":
             cur = conn.cursor()
-            cur.execute(
-                "SELECT name, type FROM sqlite_master WHERE type IN ('table', 'view') "
-                "AND name NOT LIKE 'sqlite_%' ORDER BY name"
-            )
-            entries = cur.fetchall()
-            for row in entries:
-                tname = str(row[0])
-                ttype: Literal["table", "view"] = "view" if str(row[1]) == "view" else "table"
-                qname = _quote_sql_ident(tname, "sqlite")
-                cols_raw = cur.execute(f"PRAGMA table_info({qname})").fetchall()
-                fks_raw = cur.execute(f"PRAGMA foreign_key_list({qname})").fetchall()
-                row_count: Optional[int] = None
+            try:
+                cur.execute(
+                    "SELECT name, type FROM sqlite_master WHERE type IN ('table', 'view') "
+                    "AND name NOT LIKE 'sqlite_%' ORDER BY name"
+                )
+                entries = cur.fetchall()
+                for row in entries:
+                    tname = str(row[0])
+                    ttype: Literal["table", "view"] = "view" if str(row[1]) == "view" else "table"
+                    qname = _quote_sql_ident(tname, "sqlite")
+                    cols_raw = cur.execute(f"PRAGMA table_info({qname})").fetchall()
+                    fks_raw = cur.execute(f"PRAGMA foreign_key_list({qname})").fetchall()
+                    row_count: Optional[int] = None
+                    try:
+                        cnt = cur.execute(f"SELECT COUNT(*) FROM {qname}").fetchone()
+                        if cnt is not None:
+                            row_count = int(cnt[0])
+                    except Exception:
+                        pass
+                    cols = [
+                        SchemaColumn(
+                            name=str(c[1]),
+                            data_type=str(c[2] or "ANY"),
+                            nullable=(c[3] == 0 and int(c[5]) == 0),
+                            primary_key=int(c[5]) > 0,
+                            default_value=str(c[4]) if c[4] is not None else None,
+                        )
+                        for c in cols_raw
+                    ]
+                    fks = [
+                        ForeignKeyInfo(column=str(fk[3]), ref_table=str(fk[2]), ref_column=str(fk[4]))
+                        for fk in fks_raw
+                    ]
+                    tables.append(SchemaTable(name=tname, table_type=ttype, columns=cols, foreign_keys=fks, row_count=row_count))
+                return SchemaResult(kind="sqlite", target=target, tables=tables)
+            finally:
                 try:
-                    cnt = cur.execute(f"SELECT COUNT(*) FROM {qname}").fetchone()
-                    if cnt is not None:
-                        row_count = int(cnt[0])
+                    cur.close()
                 except Exception:
                     pass
-                cols = [
-                    SchemaColumn(
-                        name=str(c[1]),
-                        data_type=str(c[2] or "ANY"),
-                        nullable=(c[3] == 0 and int(c[5]) == 0),
-                        primary_key=int(c[5]) > 0,
-                        default_value=str(c[4]) if c[4] is not None else None,
-                    )
-                    for c in cols_raw
-                ]
-                fks = [
-                    ForeignKeyInfo(column=str(fk[3]), ref_table=str(fk[2]), ref_column=str(fk[4]))
-                    for fk in fks_raw
-                ]
-                tables.append(SchemaTable(name=tname, table_type=ttype, columns=cols, foreign_keys=fks, row_count=row_count))
-            return SchemaResult(kind="sqlite", target=target, tables=tables)
 
         if self.spec.kind == "postgres":
             t_res = self.query(

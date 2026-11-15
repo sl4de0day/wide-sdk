@@ -1,6 +1,6 @@
 import math
 from enum import Enum
-from typing import List
+from typing import List, Optional
 
 class BarrierBudget(Enum):
     Patient = 0
@@ -17,7 +17,7 @@ class SynchronizationBarrier:
         self.ready_states: List[bool] = [False] * capacity
         self.report_times: List[float] = [0.0] * capacity
         self.quorum_reached = False
-        self.stage_start_time = 0.0
+        self.stage_start_time: Optional[float] = None
 
     @property
     def reached_quorum(self) -> bool:
@@ -40,7 +40,7 @@ class SynchronizationBarrier:
 
         ready_count = sum(1 for i in range(self.capacity) if self.agent_ids[i] != 0 and self.ready_states[i])
 
-        if self.stage_start_time == 0.0:
+        if self.stage_start_time is None:
             self.stage_start_time = now
 
         if ready_count >= required:
@@ -58,4 +58,4 @@ class SynchronizationBarrier:
         self.ready_states = [False] * self.capacity
         self.report_times = [0.0] * self.capacity
         self.quorum_reached = False
-        self.stage_start_time = 0.0
+        self.stage_start_time = None

@@ -5,6 +5,8 @@ from typing import Dict, Any, Optional
 from ..types import ToolDefinition, ToolResult
 from .base import BaseTool
 
+_MAX_READ_BYTES = 2 * 1024 * 1024
+
 def _read_file_handler(params: Dict[str, Any], context: Dict[str, Any]) -> ToolResult:
     try:
         working_dir = context.get("working_directory", os.getcwd())
@@ -12,8 +14,18 @@ def _read_file_handler(params: Dict[str, Any], context: Dict[str, Any]) -> ToolR
 
         if not file_path.exists():
             return ToolResult(success=False, output="", error=f"File not found: {params['path']}")
+        if not file_path.is_file():
+            return ToolResult(success=False, output="", error=f"Path is not a regular file: {params['path']}")
 
-        content = file_path.read_text(encoding="utf-8", errors="replace")
+        size = file_path.stat().st_size
+        if size > _MAX_READ_BYTES:
+            return ToolResult(success=False, output="", error=f"File exceeds 2 MB safety limit ({size} bytes): {params['path']}")
+
+        raw = file_path.read_bytes()
+        if b"\x00" in raw[:4096]:
+            return ToolResult(success=False, output="", error=f"Refusing to read binary file: {params['path']}")
+
+        content = raw.decode("utf-8", errors="replace")
         lines = content.splitlines()
 
         start = int(params.get("startLine", 1))

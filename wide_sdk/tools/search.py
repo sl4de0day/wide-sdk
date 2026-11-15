@@ -1,3 +1,4 @@
+import fnmatch
 import os
 import re
 from pathlib import Path
@@ -5,28 +6,35 @@ from typing import Dict, Any, List
 from ..types import ToolDefinition, ToolResult
 from .base import BaseTool
 
+_MAX_SEARCH_FILE_BYTES = 1024 * 1024
+_IGNORE_DIRS = {"node_modules", ".git", "dist", "build", ".next", ".cache", "__pycache__", ".venv", "venv"}
+
 def _list_dir_handler(params: Dict[str, Any], context: Dict[str, Any]) -> ToolResult:
     try:
         working_dir = context.get("working_directory", os.getcwd())
         target_path = (Path(working_dir) / params.get("path", ".")).resolve()
+        if not target_path.exists() or not target_path.is_dir():
+            return ToolResult(success=False, output="", error=f"Directory not found: {params.get('path', '.')}")
         max_depth = int(params.get("maxDepth", 1))
 
-        ignore_dirs = {"node_modules", ".git", "dist", "build", ".next", ".cache", "__pycache__", ".venv", "venv"}
         entries: List[str] = []
 
         def traverse(current_dir: Path, depth: int) -> None:
             if depth > max_depth or not current_dir.exists():
                 return
             for item in sorted(current_dir.iterdir()):
-                if item.name in ignore_dirs:
+                if item.name in _IGNORE_DIRS:
                     continue
                 rel = item.relative_to(target_path)
                 if item.is_dir():
                     entries.append(f"[DIR]  {rel}/")
                     traverse(item, depth + 1)
                 else:
-                    size = item.stat().st_size
-                    entries.append(f"[FILE] {rel} ({size} B)")
+                    try:
+                        size = item.stat().st_size
+                        entries.append(f"[FILE] {rel} ({size} B)")
+                    except OSError:
+                        entries.append(f"[FILE] {rel} (unreadable)")
 
         traverse(target_path, 1)
         output = "\n".join(entries[:200])
@@ -58,32 +66,50 @@ def _search_files_handler(params: Dict[str, Any], context: Dict[str, Any]) -> To
         working_dir = context.get("working_directory", os.getcwd())
         root_path = Path(working_dir).resolve()
         pattern = params["pattern"]
-        glob_filter = params.get("glob", "**/*")
+        glob_filter = str(params.get("glob", "**/*") or "**/*").replace("\\", "/")
 
-        regex = re.compile(pattern, re.IGNORECASE)
-        ignore_dirs = {"node_modules", ".git", "dist", "build", ".cache", "__pycache__", ".venv", "venv"}
+        try:
+            regex = re.compile(pattern, re.IGNORECASE)
+        except re.error as exc:
+            return ToolResult(success=False, output="", error=f"Invalid search pattern: {exc}")
 
         matches: List[str] = []
+        basename_filter = glob_filter[3:] if glob_filter.startswith("**/") else glob_filter
+        match_full_rel = "/" in glob_filter and not glob_filter.startswith("**/")
 
-        for item in root_path.glob(glob_filter):
-            if any(part in ignore_dirs for part in item.parts):
-                continue
-            if not item.is_file():
-                continue
-
-            try:
-                content = item.read_text(encoding="utf-8", errors="ignore")
-                lines = content.splitlines()
+        for root, dirs, files in os.walk(root_path):
+            dirs[:] = sorted(d for d in dirs if d not in _IGNORE_DIRS)
+            for fname in sorted(files):
+                item = Path(root) / fname
                 rel = item.relative_to(root_path)
+                rel_posix = rel.as_posix()
+                matched = fnmatch.fnmatch(rel_posix, glob_filter) if match_full_rel else (
+                    fnmatch.fnmatch(fname, basename_filter) or fnmatch.fnmatch(rel_posix, glob_filter)
+                )
+                if not matched:
+                    continue
 
-                for idx, line in enumerate(lines):
-                    if regex.search(line):
-                        matches.append(f"{rel}:{idx + 1}: {line.strip()}")
-                        if len(matches) >= 100:
-                            break
-            except Exception:
-                pass
+                try:
+                    if item.stat().st_size > _MAX_SEARCH_FILE_BYTES:
+                        continue
+                    raw = item.read_bytes()
+                    if b"\x00" in raw[:2048]:
+                        continue
+                    content = raw.decode("utf-8", errors="ignore")
+                    lines = content.splitlines()
 
+                    for idx, line in enumerate(lines):
+                        if len(line) > 2000:
+                            continue
+                        if regex.search(line):
+                            matches.append(f"{rel}:{idx + 1}: {line.strip()}")
+                            if len(matches) >= 100:
+                                break
+                except Exception:
+                    pass
+
+                if len(matches) >= 100:
+                    break
             if len(matches) >= 100:
                 break
 

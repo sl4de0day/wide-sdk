@@ -4,7 +4,7 @@ import json
 import hashlib
 import urllib.request
 from pathlib import Path
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Tuple
 from .rules import SecurityRule, SECURITY_RULES, DEFAULT_AGENT_RULES
 
 DEFAULT_CACHE_DIR = Path.home() / ".wide" / "rules"
@@ -19,6 +19,9 @@ INSTALL_WIDE_OSV = Path(__file__).resolve().parents[3] / "wide-rules" / "dist" /
 _EMOJI_SINGLE = r"(?:[0-9#*]\uFE0F?\u20E3|[\U0001F1E6-\U0001FAFF\U0001F000-\U0001F0FF\U000E0020-\U000E007F]|[\u231A-\u23FF\u2600-\u27BF\u2B05-\u2B55][\uFE0E\uFE0F]?|[\u2139\u2194-\u21AA\u24C2\u25AA-\u25FE\u2934-\u2935\u3030\u303D\u3297\u3299]\uFE0F|[\uFE0E\uFE0F\u20E3])"
 _EMOJI_ZWJ_RE = re.compile(rf"(?:{_EMOJI_SINGLE})(?:\u200D(?:{_EMOJI_SINGLE}))+")
 _EMOJI_SINGLE_RE = re.compile(_EMOJI_SINGLE)
+_CHECKSUM_LINE_RE = re.compile(r"^([a-fA-F0-9]{64})\s+\*?(.+)$")
+_PARSED_RULES_CACHE: Dict[str, Tuple[int, int, List[SecurityRule]]] = {}
+_PARSED_RULES_CACHE_MAX = 64
 
 
 def _merge_default_agent_rules(rules: List[SecurityRule]) -> List[SecurityRule]:
@@ -183,53 +186,60 @@ class RuleLoader:
         return result
 
     @classmethod
-    def update_rules(cls) -> int:
-        DEFAULT_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    def update_rules(cls, verify_sha256: bool = True, cache_dir: Optional[Path] = None) -> int:
+        target_cache_dir = Path(cache_dir) if cache_dir is not None else DEFAULT_CACHE_DIR
+        target_rules_file = target_cache_dir / "rules.json"
+        target_osv_file = target_cache_dir / "osv-bundle.json"
+        target_cache_dir.mkdir(parents=True, exist_ok=True)
+
         checksums: Dict[str, str] = {}
-        try:
+        if verify_sha256:
             sum_req = urllib.request.Request(
                 REMOTE_CHECKSUMS_URL,
-                headers={"User-Agent": "Wide-SDK/0.4141126"}
+                headers={"User-Agent": "Wide-SDK/0.5151126"}
             )
             with urllib.request.urlopen(sum_req, timeout=15) as sum_res:
                 for line in sum_res.read().decode("utf-8").splitlines():
-                    m = re.match(r"^([a-fA-F0-9]{64})\s+\*?(.+)$", line.strip())
+                    m = _CHECKSUM_LINE_RE.match(line.strip())
                     if m:
                         checksums[m.group(2).strip()] = m.group(1).lower()
-        except Exception:
-            pass
+            if "rules.json" not in checksums:
+                raise ValueError("Missing SHA-256 checksum for rules.json in SHA256SUMS")
 
         req = urllib.request.Request(
             REMOTE_RULES_URL,
-            headers={"User-Agent": "Wide-SDK/0.4141126"}
+            headers={"User-Agent": "Wide-SDK/0.5151126"}
         )
         with urllib.request.urlopen(req, timeout=15) as response:
             rules_raw = response.read().decode("utf-8")
 
-        expected_sha = checksums.get("rules.json")
-        if expected_sha:
+        if verify_sha256:
+            expected_sha = checksums["rules.json"]
             actual_sha = hashlib.sha256(rules_raw.encode("utf-8")).hexdigest()
             if actual_sha != expected_sha:
                 raise ValueError("SHA-256 mismatch while downloading rules.json")
 
         data = json.loads(rules_raw)
-        with open(DEFAULT_CACHE_FILE, "w", encoding="utf-8") as f:
+        with open(target_rules_file, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
+        _PARSED_RULES_CACHE.pop(str(target_rules_file.resolve()), None)
 
         try:
             osv_req = urllib.request.Request(
                 REMOTE_OSV_URL,
-                headers={"User-Agent": "Wide-SDK/0.4141126"}
+                headers={"User-Agent": "Wide-SDK/0.5151126"}
             )
             with urllib.request.urlopen(osv_req, timeout=15) as osv_res:
                 osv_raw = osv_res.read().decode("utf-8")
-            expected_osv = checksums.get("osv-bundle.json")
-            if expected_osv:
+            if verify_sha256:
+                expected_osv = checksums.get("osv-bundle.json")
+                if not expected_osv:
+                    raise ValueError("Missing SHA-256 checksum for osv-bundle.json in SHA256SUMS")
                 actual_osv = hashlib.sha256(osv_raw.encode("utf-8")).hexdigest()
                 if actual_osv != expected_osv:
                     raise ValueError("SHA-256 mismatch while downloading osv-bundle.json")
             osv_data = json.loads(osv_raw)
-            with open(DEFAULT_OSV_FILE, "w", encoding="utf-8") as f:
+            with open(target_osv_file, "w", encoding="utf-8") as f:
                 json.dump(osv_data, f, indent=2)
         except ValueError:
             raise
@@ -242,7 +252,14 @@ class RuleLoader:
     @classmethod
     def _parse_file(cls, path: Path) -> List[SecurityRule]:
         try:
-            with open(path, "r", encoding="utf-8") as f:
+            resolved = path.resolve()
+            cache_key = str(resolved)
+            st = resolved.stat()
+            cached = _PARSED_RULES_CACHE.get(cache_key)
+            if cached is not None and cached[0] == st.st_mtime_ns and cached[1] == st.st_size:
+                return list(cached[2])
+
+            with open(resolved, "r", encoding="utf-8") as f:
                 data = json.load(f)
             raw_list = data if isinstance(data, list) else data.get("rules", [])
             rules: List[SecurityRule] = []
@@ -275,12 +292,17 @@ class RuleLoader:
                     )
                 except Exception:
                     continue
+
+            if len(_PARSED_RULES_CACHE) >= _PARSED_RULES_CACHE_MAX:
+                oldest_key = next(iter(_PARSED_RULES_CACHE))
+                _PARSED_RULES_CACHE.pop(oldest_key, None)
+            _PARSED_RULES_CACHE[cache_key] = (st.st_mtime_ns, st.st_size, list(rules))
             return rules
         except Exception:
             return []
 
-def update_rules() -> int:
-    return RuleLoader.update_rules()
+def update_rules(verify_sha256: bool = True, cache_dir: Optional[Path] = None) -> int:
+    return RuleLoader.update_rules(verify_sha256=verify_sha256, cache_dir=cache_dir)
 
 def load_rules(custom_path: Optional[str] = None, workspace_dir: str = ".") -> List[SecurityRule]:
     return RuleLoader.load_rules(custom_path, workspace_dir)

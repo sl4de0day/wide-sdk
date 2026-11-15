@@ -59,5 +59,17 @@ class TestTools(unittest.TestCase):
         self.assertTrue(res.success)
         self.assertEqual(res.output, "12")
 
+    def test_read_file_rejects_binary(self) -> None:
+        (Path(self.test_dir.name) / "bin.dat").write_bytes(b"\x89PNG\r\n\x1a\n\x00\x00")
+        res = read_file_tool.execute({"path": "bin.dat"}, self.context)
+        self.assertFalse(res.success)
+        self.assertIn("binary", (res.error or "").lower())
+
+    def test_search_files_invalid_regex_returns_error(self) -> None:
+        write_file_tool.execute({"path": "x.txt", "content": "hello"}, self.context)
+        res = search_files_tool.execute({"pattern": "[unclosed"}, self.context)
+        self.assertFalse(res.success)
+        self.assertIn("invalid search pattern", (res.error or "").lower())
+
 if __name__ == "__main__":
     unittest.main()

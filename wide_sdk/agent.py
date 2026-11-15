@@ -1,7 +1,10 @@
 import os
 import json
-import re
+import logging
+import time
 from typing import List, Dict, Optional, Callable, Any
+
+_logger = logging.getLogger("wide_sdk.agent")
 from .types import ChatMessage, ToolDefinition, ToolCall, ToolResult
 from .context import ContextManager
 from .providers.base import BaseProvider
@@ -76,14 +79,19 @@ class Agent:
 
         iteration = 0
         final_text = ""
+        incomplete_tool_loop = False
         gate = CommitmentGate(32, 0.0)
         call_counts: Dict[str, int] = {}
 
         while iteration < self.max_iterations:
             iteration += 1
+            incomplete_tool_loop = False
             self.messages = self.context_manager.compact_messages(self.messages)
+            _logger.debug("Agent iteration=%d/%d messages=%d", iteration, self.max_iterations, len(self.messages))
 
+            t0 = time.monotonic()
             content, tool_calls = self.provider.chat(self.messages, tool_defs)
+            _logger.debug("Provider=%s elapsed_ms=%d", self.provider.name, int((time.monotonic() - t0) * 1000))
             if content:
                 content = RuleLoader.sanitize_output(content, self.agent_rules)
             final_text = content
@@ -99,6 +107,7 @@ class Agent:
 
             if not tool_calls:
                 break
+            incomplete_tool_loop = True
 
             for tc in tool_calls:
                 if self.on_tool_call:
@@ -148,5 +157,10 @@ class Agent:
                     tool_call_id=tc.id,
                     content=output_str
                 ))
+
+        if incomplete_tool_loop and iteration >= self.max_iterations:
+            warn_msg = f"[Stopped: reached max_iterations ({self.max_iterations}) limit before final response.]"
+            _logger.warning("Agent stopped on tool loop limit (%d iterations)", self.max_iterations)
+            final_text = f"{final_text}\n\n{warn_msg}".strip() if final_text else warn_msg
 
         return final_text

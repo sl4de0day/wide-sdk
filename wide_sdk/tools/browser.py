@@ -16,7 +16,8 @@ def get_browser() -> BrowserController:
 def _browser_open_handler(params: Dict[str, Any], context: Dict[str, Any]) -> ToolResult:
     try:
         browser = get_browser()
-        result = browser.open(params.get("url"))
+        stealth = params.get("stealth")
+        result = browser.open(params.get("url"), stealth=bool(stealth) if stealth is not None else None)
         return ToolResult(success=True, output=result)
     except Exception as e:
         return ToolResult(success=False, output="", error=f"Open error: {str(e)}")
@@ -29,7 +30,8 @@ browser_open_tool = BaseTool(
         parameters={
             "type": "object",
             "properties": {
-                "url": {"type": "string", "description": "Optional destination URL to open immediately."}
+                "url": {"type": "string", "description": "Optional destination URL to open immediately."},
+                "stealth": {"type": "boolean", "description": "Opt-in stealth evasion mode masking navigator.webdriver."}
             }
         }
     ),
@@ -393,6 +395,35 @@ browser_eval_tool = BaseTool(
         }
     ),
     handler=_browser_eval_handler
+)
+
+
+def _browser_export_har_handler(params: Dict[str, Any], context: Dict[str, Any]) -> ToolResult:
+    try:
+        import json
+        browser = get_browser()
+        har = browser.export_har(
+            url_filter=str(params.get("url_filter") or ""),
+            limit=int(params.get("limit") or 100),
+        )
+        return ToolResult(success=True, output=json.dumps(har, indent=2)[:18000])
+    except Exception as e:
+        return ToolResult(success=False, output="", error=f"HAR export error: {str(e)}")
+
+
+browser_export_har_tool = BaseTool(
+    definition=ToolDefinition(
+        name="browser_export_har",
+        description="Export captured browser network traffic as HAR 1.2 JSON (sensitive Auth/Cookie headers redacted).",
+        parameters={
+            "type": "object",
+            "properties": {
+                "url_filter": {"type": "string", "description": "Optional URL substring filter."},
+                "limit": {"type": "integer", "description": "Maximum HAR entries to return (default 100)."}
+            }
+        }
+    ),
+    handler=_browser_export_har_handler
 )
 
 

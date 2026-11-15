@@ -1,8 +1,10 @@
+import io
 import json
 import unittest
 import tempfile
 from pathlib import Path
-from wide_sdk.security import SecurityScanner, RuleLoader, load_advisories
+from unittest.mock import patch
+from wide_sdk.security import SecurityScanner, RuleLoader, load_advisories, fuzz_endpoint
 
 class TestSecurityScanner(unittest.TestCase):
     def setUp(self) -> None:
@@ -87,6 +89,48 @@ class TestSecurityScanner(unittest.TestCase):
         advisories = load_advisories(str(self.root))
         self.assertIsInstance(advisories, dict)
         self.assertIn("npm", advisories)
+
+    def test_scan_single_file_and_skips_binary(self) -> None:
+        (self.root / "bad.js").write_text('const q = "SELECT * FROM t WHERE id=" + req.query.id;', encoding="utf-8")
+        (self.root / "fake.py").write_bytes(b"eval(x)\x00\x01\x02")
+        scanner = SecurityScanner(str(self.root))
+        single = scanner.scan("bad.js", min_severity="HIGH")
+        self.assertEqual(single.total_files_scanned, 1)
+        self.assertGreaterEqual(len(single.findings), 1)
+        dir_res = scanner.scan(".", min_severity="ALL")
+        scanned_files = [f.file for f in dir_res.findings]
+        self.assertNotIn("fake.py", scanned_files)
+
+    def test_fuzz_endpoint_post_uses_form_body(self) -> None:
+        seen_requests = []
+
+        class _FakeResp(io.BytesIO):
+            status = 200
+            def __enter__(self) -> "_FakeResp":
+                return self
+            def __exit__(self, *args: object) -> None:
+                self.close()
+
+        def fake_urlopen(req: object, timeout: float = 10.0) -> _FakeResp:
+            seen_requests.append((
+                getattr(req, "full_url", ""),
+                getattr(req, "method", ""),
+                getattr(req, "data", None),
+            ))
+            return _FakeResp(b"ok")
+
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            fuzz_endpoint("https://example.com/submit", "username", "xss", method="POST")
+
+        self.assertGreaterEqual(len(seen_requests), 2)
+        baseline_url, baseline_method, baseline_data = seen_requests[0]
+        self.assertEqual(baseline_method, "POST")
+        self.assertEqual(baseline_url, "https://example.com/submit")
+        self.assertEqual(baseline_data, b"username=testbaselinevalue123")
+        payload_url, payload_method, payload_data = seen_requests[1]
+        self.assertEqual(payload_method, "POST")
+        self.assertEqual(payload_url, "https://example.com/submit")
+        self.assertTrue(payload_data and payload_data.startswith(b"username="))
 
 if __name__ == "__main__":
     unittest.main()
