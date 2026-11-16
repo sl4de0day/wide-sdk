@@ -15,6 +15,8 @@ REMOTE_OSV_URL = "https://raw.githubusercontent.com/sl4de0day/wide-rules/main/di
 REMOTE_CHECKSUMS_URL = "https://raw.githubusercontent.com/sl4de0day/wide-rules/main/dist/SHA256SUMS"
 INSTALL_WIDE_RULES = Path(__file__).resolve().parents[3] / "wide-rules" / "dist" / "rules.json"
 INSTALL_WIDE_OSV = Path(__file__).resolve().parents[3] / "wide-rules" / "dist" / "osv-bundle.json"
+BUNDLED_WIDE_RULES = Path(__file__).resolve().parent.parent / "data" / "rules.json"
+BUNDLED_WIDE_OSV = Path(__file__).resolve().parent.parent / "data" / "osv-bundle.json"
 
 _EMOJI_SINGLE = r"(?:[0-9#*]\uFE0F?\u20E3|[\U0001F1E6-\U0001FAFF\U0001F000-\U0001F0FF\U000E0020-\U000E007F]|[\u231A-\u23FF\u2600-\u27BF\u2B05-\u2B55][\uFE0E\uFE0F]?|[\u2139\u2194-\u21AA\u24C2\u25AA-\u25FE\u2934-\u2935\u3030\u303D\u3297\u3299]\uFE0F|[\uFE0E\uFE0F\u20E3])"
 _EMOJI_ZWJ_RE = re.compile(rf"(?:{_EMOJI_SINGLE})(?:\u200D(?:{_EMOJI_SINGLE}))+")
@@ -55,6 +57,8 @@ class RuleLoader:
             return {"active": str(INSTALL_WIDE_RULES), "workspace": None, "cache": str(DEFAULT_CACHE_FILE)}
         if DEFAULT_CACHE_FILE.exists():
             return {"active": str(DEFAULT_CACHE_FILE), "workspace": None, "cache": str(DEFAULT_CACHE_FILE)}
+        if BUNDLED_WIDE_RULES.exists():
+            return {"active": str(BUNDLED_WIDE_RULES), "workspace": None, "cache": str(DEFAULT_CACHE_FILE)}
         return {"active": "embedded", "workspace": None, "cache": str(DEFAULT_CACHE_FILE)}
 
     @classmethod
@@ -89,6 +93,11 @@ class RuleLoader:
 
         if DEFAULT_CACHE_FILE.exists():
             rules = cls._parse_file(DEFAULT_CACHE_FILE)
+            if rules:
+                return rules
+
+        if BUNDLED_WIDE_RULES.exists():
+            rules = cls._parse_file(BUNDLED_WIDE_RULES)
             if rules:
                 return rules
 
@@ -142,6 +151,12 @@ class RuleLoader:
             if filtered:
                 return _merge_default_agent_rules(filtered)
 
+        if BUNDLED_WIDE_RULES.exists():
+            rules = cls._parse_file(BUNDLED_WIDE_RULES)
+            filtered = [r for r in rules if r.category == "AI_SECURITY" or "ai-" in r.id]
+            if filtered:
+                return _merge_default_agent_rules(filtered)
+
         return list(DEFAULT_AGENT_RULES)
 
     @classmethod
@@ -151,6 +166,7 @@ class RuleLoader:
             DEFAULT_OSV_FILE,
             (Path(workspace_dir) / ".." / "wide-rules" / "dist" / "osv-bundle.json").resolve(),
             INSTALL_WIDE_OSV,
+            BUNDLED_WIDE_OSV,
         ]
         for file_path in candidates:
             if file_path.exists():
