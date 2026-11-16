@@ -132,5 +132,74 @@ class TestSecurityScanner(unittest.TestCase):
         self.assertEqual(payload_url, "https://example.com/submit")
         self.assertTrue(payload_data and payload_data.startswith(b"username="))
 
+    def test_cross_file_taint_sca_reachability_and_secret_entropy(self) -> None:
+        from wide_sdk.security import is_likely_real_secret
+
+        (self.root / ".github" / "workflows").mkdir(parents=True, exist_ok=True)
+        (self.root / "sink.js").write_text(
+            "export function runExec(cmdArg) {\n  return exec(\n    'ls ' +\n    cmdArg\n  );\n}\n",
+            encoding="utf-8",
+        )
+        (self.root / "routes.js").write_text(
+            "import express from 'express';\nimport { runExec } from './sink.js';\nexport function handle(req) {\n  const raw = req.query.cmd;\n  return runExec(raw);\n}\n",
+            encoding="utf-8",
+        )
+        (self.root / ".github" / "workflows" / "pr.yml").write_text(
+            "on: pull_request_target\nsteps:\n  - uses: actions/checkout@v4\n    with:\n      ref: ${{ github.event.pull_request.head.sha }}\n",
+            encoding="utf-8",
+        )
+        (self.root / "yarn.lock").write_text('"express@^4.17.0":\n  version "4.17.1"\n', encoding="utf-8")
+        (self.root / "Cargo.lock").write_text('[[package]]\nname = "regex"\nversion = "1.5.4"\n', encoding="utf-8")
+
+        advisories = {
+            "npm": [{"name": "express", "le": "4.17.1", "id": "CVE-2024-7771", "cwe": "CWE-601", "sev": "high", "kev": True, "note": "redirect"}],
+            "cargo": [{"name": "regex", "lt": "1.6.0", "id": "CVE-2022-24713", "cwe": "CWE-1333", "sev": "high", "note": "redos"}],
+        }
+
+        scanner = SecurityScanner(str(self.root))
+        res = scanner.scan(".", min_severity="ALL", sca=True, advisories=advisories)
+
+        self.assertTrue(any(f.cross_file and f.file == "routes.js" for f in res.findings))
+        self.assertTrue(any(f.id == "wide/cicd-gha-pull-request-target-checkout" for f in res.findings))
+        express_hit = next((f for f in res.findings if f.source == "sca" and "express@4.17.1" in f.message), None)
+        cargo_hit = next((f for f in res.findings if f.source == "sca" and "regex@1.5.4" in f.message), None)
+        self.assertIsNotNone(express_hit)
+        self.assertEqual(express_hit.reachable, True)  # type: ignore[union-attr]
+        self.assertIsNotNone(cargo_hit)
+        self.assertEqual(cargo_hit.reachable, False)  # type: ignore[union-attr]
+        self.assertFalse(is_likely_real_secret('const key = "EXAMPLE_YOUR_API_KEY_HERE";'))
+
+    def test_fuzz_endpoint_json_ssti_and_idor(self) -> None:
+        class _FakeResp(io.BytesIO):
+            def __init__(self, payload: bytes, status: int = 200) -> None:
+                super().__init__(payload)
+                self.status = status
+            def __enter__(self) -> "_FakeResp":
+                return self
+            def __exit__(self, *args: object) -> None:
+                self.close()
+
+        def fake_urlopen(req: object, timeout: float = 10.0) -> _FakeResp:
+            raw_data = getattr(req, "data", b"") or b""
+            if b"7*7" in raw_data:
+                return _FakeResp(b"Result: 49")
+            return _FakeResp(b"Result: ok")
+
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            ssti = fuzz_endpoint("https://example.com/render", "tpl", "ssti", method="POST", location="json")
+            self.assertTrue(ssti.is_vulnerable)
+            self.assertIn("49", ssti.findings[0].indicator)
+
+            idor = fuzz_endpoint(
+                "https://example.com/account",
+                "id",
+                "idor",
+                method="GET",
+                headers={"Authorization": "Bearer user-a"},
+                compare_headers={"Authorization": "Bearer user-b"},
+            )
+            self.assertTrue(idor.is_vulnerable)
+            self.assertIn("Differential Access Control", idor.findings[0].indicator)
+
 if __name__ == "__main__":
     unittest.main()

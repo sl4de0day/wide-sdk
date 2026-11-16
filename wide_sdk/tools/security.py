@@ -38,7 +38,10 @@ def _fuzz_handler(params: Dict[str, Any], context: Dict[str, Any]) -> ToolResult
             url=params["url"],
             param=params["param"],
             payload_type=params["payloadType"],
-            method=params.get("method", "GET")
+            method=params.get("method", "GET"),
+            location=params.get("location"),
+            headers=params.get("headers"),
+            compare_headers=params.get("compareHeaders"),
         )
         lines = [
             f"Fuzzing Target: {report.url}",
@@ -67,8 +70,11 @@ fuzz_endpoint_tool = BaseTool(
             "properties": {
                 "url": {"type": "string", "description": "Target endpoint URL."},
                 "param": {"type": "string", "description": "Parameter to fuzz."},
-                "payloadType": {"type": "string", "description": "Category of payloads.", "enum": ["sqli", "xss", "ssrf", "traversal", "cmd", "ssti"]},
-                "method": {"type": "string", "description": "HTTP method ('GET' or 'POST').", "enum": ["GET", "POST"]}
+                "payloadType": {"type": "string", "description": "Category of payloads.", "enum": ["sqli", "xss", "ssrf", "traversal", "cmd", "ssti", "idor"]},
+                "method": {"type": "string", "description": "HTTP method ('GET', 'POST', 'PUT', 'PATCH', 'DELETE').", "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"]},
+                "location": {"type": "string", "description": "Parameter placement.", "enum": ["query", "form", "json", "header", "cookie", "path"]},
+                "headers": {"type": "object", "description": "Optional request headers."},
+                "compareHeaders": {"type": "object", "description": "Optional secondary credentials headers for differential IDOR checks."}
             },
             "required": ["url", "param", "payloadType"]
         }

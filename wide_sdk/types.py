@@ -38,6 +38,10 @@ class Finding:
     snippet: str
     message: str
     remediation: str
+    source: Optional[str] = None
+    cross_file: bool = False
+    reachable: Optional[bool] = None
+    end_line: Optional[int] = None
 
 @dataclass
 class ScanResult:
