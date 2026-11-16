@@ -196,7 +196,7 @@ class RuleLoader:
         if verify_sha256:
             sum_req = urllib.request.Request(
                 REMOTE_CHECKSUMS_URL,
-                headers={"User-Agent": "Wide-SDK/0.5151126"}
+                headers={"User-Agent": "Wide-SDK/0.5161126"}
             )
             with urllib.request.urlopen(sum_req, timeout=15) as sum_res:
                 for line in sum_res.read().decode("utf-8").splitlines():
@@ -208,7 +208,7 @@ class RuleLoader:
 
         req = urllib.request.Request(
             REMOTE_RULES_URL,
-            headers={"User-Agent": "Wide-SDK/0.5151126"}
+            headers={"User-Agent": "Wide-SDK/0.5161126"}
         )
         with urllib.request.urlopen(req, timeout=15) as response:
             rules_raw = response.read().decode("utf-8")
@@ -227,7 +227,7 @@ class RuleLoader:
         try:
             osv_req = urllib.request.Request(
                 REMOTE_OSV_URL,
-                headers={"User-Agent": "Wide-SDK/0.5151126"}
+                headers={"User-Agent": "Wide-SDK/0.5161126"}
             )
             with urllib.request.urlopen(osv_req, timeout=15) as osv_res:
                 osv_raw = osv_res.read().decode("utf-8")
