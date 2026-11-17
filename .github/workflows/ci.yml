@@ -64,58 +64,54 @@ jobs:
         with:
           fetch-depth: 2
 
-      - name: Check Package Changes
-        id: check_diff
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-        run: |
-          if [ "$EVENT_NAME" != "workflow_dispatch" ] && git rev-parse HEAD~1 >/dev/null 2>&1; then
-            if ! git diff --name-only HEAD~1 HEAD | grep -Eq '^(wide_sdk/|pyproject\.toml$)'; then
-              echo "should_publish=false" >> "$GITHUB_OUTPUT"
-              echo "No changes in wide_sdk/ or pyproject.toml; skipping PyPI publish."
-              exit 0
-            fi
-          fi
-          echo "should_publish=true" >> "$GITHUB_OUTPUT"
-
       - name: Set up Python 3.12
-        if: steps.check_diff.outputs.should_publish == 'true'
         uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
-      - name: Build and Auto-Version Package
-        if: steps.check_diff.outputs.should_publish == 'true'
+      - name: Detect Version Change
+        id: check_version
         env:
-          RUN_NUMBER: ${{ github.run_number }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          python - <<'PY'
+          import os, pathlib, re, subprocess
+          txt = pathlib.Path("pyproject.toml").read_text(encoding="utf-8")
+          m = re.search(r'^version\s*=\s*"([^"]+)"', txt, re.M)
+          cur_ver = m.group(1) if m else ""
+          prev_ver = ""
+          try:
+              prev_txt = subprocess.check_output(["git", "show", "HEAD~1:pyproject.toml"], text=True, stderr=subprocess.DEVNULL)
+              pm = re.search(r'^version\s*=\s*"([^"]+)"', prev_txt, re.M)
+              prev_ver = pm.group(1) if pm else ""
+          except Exception:
+              pass
+          event_name = os.environ.get("EVENT_NAME", "")
+          should_publish = "true" if (event_name == "workflow_dispatch" or (cur_ver and cur_ver != prev_ver)) else "false"
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
+              out.write(f"version={cur_ver}\n")
+              out.write(f"should_publish={should_publish}\n")
+          print(f"Current version: {cur_ver} | Previous version: {prev_ver} | should_publish={should_publish}")
+          PY
+
+      - name: Build Package
+        if: steps.check_version.outputs.should_publish == 'true'
         run: |
           python -m pip install --upgrade pip build twine
           python - <<'PY'
-          import json, os, pathlib, re, urllib.request
+          import pathlib, re
           p_toml = pathlib.Path("pyproject.toml")
           p_init = pathlib.Path("wide_sdk/__init__.py")
           txt = p_toml.read_text(encoding="utf-8")
           m = re.search(r'^version\s*=\s*"([^"]+)"', txt, re.M)
-          cur_ver = m.group(1) if m else "0.5161126"
-          existing = set()
-          try:
-              with urllib.request.urlopen("https://pypi.org/pypi/wide-sdk/json", timeout=10) as r:
-                  data = json.loads(r.read().decode("utf-8"))
-                  existing = set((data.get("releases") or {}).keys())
-          except Exception:
-              pass
-          if cur_ver in existing:
-              run_no = os.environ.get("RUN_NUMBER", "1")
-              new_ver = f"{cur_ver}.{run_no}"
-              p_toml.write_text(re.sub(r'^version\s*=\s*"[^"]+"', f'version = "{new_ver}"', txt, count=1, flags=re.M), encoding="utf-8")
-              init_txt = p_init.read_text(encoding="utf-8")
-              p_init.write_text(re.sub(r'^__version__\s*=\s*"[^"]+"', f'__version__ = "{new_ver}"', init_txt, count=1, flags=re.M), encoding="utf-8")
-              print(f"Auto-bumped PyPI version {cur_ver} -> {new_ver}")
+          cur_ver = m.group(1)
+          init_txt = p_init.read_text(encoding="utf-8")
+          p_init.write_text(re.sub(r'^__version__\s*=\s*"[^"]+"', f'__version__ = "{cur_ver}"', init_txt, count=1, flags=re.M), encoding="utf-8")
           PY
           python -m build
 
       - name: Publish to PyPI via Token
-        if: steps.check_diff.outputs.should_publish == 'true' && env.PYPI_API_TOKEN != ''
+        if: steps.check_version.outputs.should_publish == 'true' && env.PYPI_API_TOKEN != ''
         env:
           TWINE_USERNAME: __token__
           TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
@@ -123,7 +119,18 @@ jobs:
           python -m twine upload --non-interactive --skip-existing dist/*
 
       - name: Publish to PyPI via OIDC Trusted Publisher
-        if: steps.check_diff.outputs.should_publish == 'true' && env.PYPI_API_TOKEN == ''
+        if: steps.check_version.outputs.should_publish == 'true' && env.PYPI_API_TOKEN == ''
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           skip-existing: true
+
+      - name: Create GitHub Release
+        if: steps.check_version.outputs.should_publish == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.check_version.outputs.version }}
+        run: |
+          TAG="v${VERSION}"
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" dist/* --target "$GITHUB_SHA" --title "Wide SDK $VERSION" --generate-notes --latest
+          fi
