@@ -3,7 +3,7 @@ import json
 import urllib.request
 from typing import Any, Dict, Tuple
 
-__version__ = "0.5161126"
+__version__ = "0.6191126"
 
 _EXPORTS: Dict[str, Tuple[str, str]] = {
     "CommitmentGate": (".decision", "CommitmentGate"),
