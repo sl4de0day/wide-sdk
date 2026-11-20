@@ -1,7 +1,7 @@
 <p align="center">
   <img src="assets/wide-logo.png" alt="Wide SDK" width="128">
   <h1 align="center">Wide SDK</h1>
-  <p align="center">Python SDK to build autonomous AI coding and web security agents powered by Wide</p>
+  <p align="center">Python SDK for building AI agents on Wide's web development and web security tooling</p>
 </p>
 
 <p align="center">
@@ -17,6 +17,8 @@
 </p>
 
 ---
+
+> **Wide blends web development and web security into one AI-powered workflow.** Write the code, catch the vulnerability, and test the fix in the same place.
 
 ## Overview
 
@@ -92,6 +94,19 @@ export ANTHROPIC_API_KEY="your-claude-key"
 export OPENAI_API_KEY="your-openai-key"
 export DEEPSEEK_API_KEY="your-deepseek-key"
 ```
+
+## The Wide Ecosystem
+
+Wide blends web development and web security into one AI-powered workflow. Every product runs on the same security rules, so a vulnerability caught in one place is caught everywhere.
+
+| Product | Who it is for |
+| :--- | :--- |
+| [Wide IDE](https://github.com/sl4de0day/wide-ide) | **The flagship.** A full IDE for web developers and pentesters: write code, see vulnerabilities as you type, and test them with built-in pentest tools and AI agents. |
+| [Wide App](https://github.com/sl4de0day/wide-app) | A prompt-only AI workspace for people who do not need a full IDE. Describe the task; Wide's agents build, fix, and audit the project. |
+| [Wide CLI](https://github.com/sl4de0day/wide-cli) | The same AI agents and security scanner in your terminal. |
+| [Wide Action](https://github.com/sl4de0day/wide-action) | The same rules as a pull request security gate in GitHub CI. |
+| [Wide SDK](https://github.com/sl4de0day/wide-sdk) | A Python library for building your own agents on Wide's security tooling. |
+| [Wide Rules](https://github.com/sl4de0day/wide-rules) | The shared rule and advisory database behind every Wide product. |
 
 ## License
 GPL-3.0-or-later sl4de

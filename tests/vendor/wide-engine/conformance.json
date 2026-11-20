@@ -1,0 +1,727 @@
+{
+  "projects": [
+    {
+      "name": "js-sinks",
+      "files": [
+        {
+          "file": "sql.js",
+          "lang": "js",
+          "content": "const id = req.query.id;\ndb.query(\"SELECT * FROM users WHERE id = \" + id);\n"
+        },
+        {
+          "file": "cmd.js",
+          "lang": "js",
+          "content": "const host = req.body.host;\nexec(\"ping -c 1 \" + host);\n"
+        },
+        {
+          "file": "xss.js",
+          "lang": "js",
+          "content": "const name = location.hash;\ndocument.getElementById(\"out\").innerHTML = name;\n"
+        },
+        {
+          "file": "ssrf.js",
+          "lang": "js",
+          "content": "const target = req.query.url;\nconst res = await fetch(target);\n"
+        },
+        {
+          "file": "path.js",
+          "lang": "js",
+          "content": "const f = req.params.file;\nfs.readFileSync(\"/srv/files/\" + f);\n"
+        },
+        {
+          "file": "redirect.js",
+          "lang": "js",
+          "content": "const next = req.query.next;\nres.redirect(next);\n"
+        },
+        {
+          "file": "code.js",
+          "lang": "js",
+          "content": "const expr = req.body.expr;\nconst out = eval(expr);\n"
+        },
+        {
+          "file": "html-send.js",
+          "lang": "js",
+          "content": "const q = req.query.q;\nres.send(\"<h1>\" + q + \"</h1>\");\n"
+        },
+        {
+          "file": "destructure.js",
+          "lang": "js",
+          "content": "const { user, role: r } = req.body;\ndb.query(`SELECT * FROM t WHERE u = '${user}'`);\n"
+        },
+        {
+          "file": "multiline.js",
+          "lang": "js",
+          "content": "const id = req.query.id;\ndb.query(\n  \"SELECT * FROM t WHERE id = \" +\n    id\n);\n"
+        },
+        {
+          "file": "reassign.ts",
+          "lang": "ts",
+          "content": "let v = req.query.v;\nv = \"constant\";\ndb.query(\"SELECT \" + v);\n"
+        },
+        {
+          "file": "append.ts",
+          "lang": "ts",
+          "content": "let sql = \"SELECT * FROM t WHERE a = \";\nsql += req.query.a;\ndb.query(sql);\n"
+        }
+      ],
+      "expected": [
+        {
+          "ruleId": "wide/taint-sql",
+          "cwe": "CWE-89",
+          "category": "INJECTION",
+          "severity": "CRITICAL",
+          "file": "sql.js",
+          "line": 2,
+          "endLine": 2,
+          "message": "Tainted user input reaches a SQL execution sink without parameterization.",
+          "snippet": "db.query(\"SELECT * FROM users WHERE id = \" + id);",
+          "crossFile": false
+        },
+        {
+          "ruleId": "wide/taint-command",
+          "cwe": "CWE-78",
+          "category": "INJECTION",
+          "severity": "CRITICAL",
+          "file": "cmd.js",
+          "line": 2,
+          "endLine": 2,
+          "message": "Tainted user input reaches an OS command execution sink.",
+          "snippet": "exec(\"ping -c 1 \" + host);",
+          "crossFile": false
+        },
+        {
+          "ruleId": "wide/taint-xss",
+          "cwe": "CWE-79",
+          "category": "XSS",
+          "severity": "HIGH",
+          "file": "xss.js",
+          "line": 2,
+          "endLine": 2,
+          "message": "Tainted user input reaches an unescaped HTML or DOM rendering sink.",
+          "snippet": "document.getElementById(\"out\").innerHTML = name;",
+          "crossFile": false
+        },
+        {
+          "ruleId": "wide/taint-ssrf",
+          "cwe": "CWE-918",
+          "category": "NETWORK",
+          "severity": "HIGH",
+          "file": "ssrf.js",
+          "line": 2,
+          "endLine": 2,
+          "message": "Tainted user input controls the target URL of an outbound network request.",
+          "snippet": "const res = await fetch(target);",
+          "crossFile": false
+        },
+        {
+          "ruleId": "wide/taint-path",
+          "cwe": "CWE-22",
+          "category": "FILESYSTEM",
+          "severity": "HIGH",
+          "file": "path.js",
+          "line": 2,
+          "endLine": 2,
+          "message": "Tainted user input reaches a filesystem path operation without normalization or boundary checks.",
+          "snippet": "fs.readFileSync(\"/srv/files/\" + f);",
+          "crossFile": false
+        },
+        {
+          "ruleId": "wide/taint-redirect",
+          "cwe": "CWE-601",
+          "category": "NETWORK",
+          "severity": "MEDIUM",
+          "file": "redirect.js",
+          "line": 2,
+          "endLine": 2,
+          "message": "Tainted user input controls an HTTP redirect destination without origin validation.",
+          "snippet": "res.redirect(next);",
+          "crossFile": false
+        },
+        {
+          "ruleId": "wide/taint-code-exec",
+          "cwe": "CWE-94",
+          "category": "INJECTION",
+          "severity": "CRITICAL",
+          "file": "code.js",
+          "line": 2,
+          "endLine": 2,
+          "message": "Tainted user input reaches dynamic code or template evaluation.",
+          "snippet": "const out = eval(expr);",
+          "crossFile": false
+        },
+        {
+          "ruleId": "wide/taint-xss",
+          "cwe": "CWE-79",
+          "category": "XSS",
+          "severity": "HIGH",
+          "file": "html-send.js",
+          "line": 2,
+          "endLine": 2,
+          "message": "Tainted user input reaches an unescaped HTML or DOM rendering sink.",
+          "snippet": "res.send(\"<h1>\" + q + \"</h1>\");",
+          "crossFile": false
+        },
+        {
+          "ruleId": "wide/taint-sql",
+          "cwe": "CWE-89",
+          "category": "INJECTION",
+          "severity": "CRITICAL",
+          "file": "destructure.js",
+          "line": 2,
+          "endLine": 2,
+          "message": "Tainted user input reaches a SQL execution sink without parameterization.",
+          "snippet": "db.query(`SELECT * FROM t WHERE u = '${user}'`);",
+          "crossFile": false
+        },
+        {
+          "ruleId": "wide/taint-sql",
+          "cwe": "CWE-89",
+          "category": "INJECTION",
+          "severity": "CRITICAL",
+          "file": "multiline.js",
+          "line": 2,
+          "endLine": 5,
+          "message": "Tainted user input reaches a SQL execution sink without parameterization.",
+          "snippet": "db.query( \"SELECT * FROM t WHERE id = \" + id );",
+          "crossFile": false
+        },
+        {
+          "ruleId": "wide/taint-sql",
+          "cwe": "CWE-89",
+          "category": "INJECTION",
+          "severity": "CRITICAL",
+          "file": "append.ts",
+          "line": 3,
+          "endLine": 3,
+          "message": "Tainted user input reaches a SQL execution sink without parameterization.",
+          "snippet": "db.query(sql);",
+          "crossFile": false
+        }
+      ]
+    },
+    {
+      "name": "js-guards",
+      "files": [
+        {
+          "file": "param-sql.js",
+          "lang": "js",
+          "content": "const id = req.query.id;\ndb.query(\"SELECT * FROM users WHERE id = $1\", [id]);\n"
+        },
+        {
+          "file": "path-guard.js",
+          "lang": "js",
+          "content": "const f = req.params.file;\nconst rel = path.relative(base, path.resolve(base, f));\nfs.readFileSync(path.join(base, f));\n"
+        },
+        {
+          "file": "url-guard.js",
+          "lang": "js",
+          "content": "const target = req.query.url;\nif (!ALLOWED_HOSTS.includes(new URL(target).hostname)) throw new Error();\nawait fetch(target);\n"
+        },
+        {
+          "file": "execfile.js",
+          "lang": "js",
+          "content": "const host = req.body.host;\nspawn(\"ping\", [\"-c\", \"1\", host]);\n"
+        },
+        {
+          "file": "send-json.js",
+          "lang": "js",
+          "content": "const q = req.query.q;\nres.send({ result: q });\n"
+        },
+        {
+          "file": "numeric.js",
+          "lang": "js",
+          "content": "const id = Number(req.query.id);\ndb.query(\"SELECT * FROM t WHERE id = \" + id);\n"
+        },
+        {
+          "file": "comment.js",
+          "lang": "js",
+          "content": "// db.query(\"SELECT \" + req.query.id);\n/* exec(req.body.cmd); */\n"
+        },
+        {
+          "file": "no-source.js",
+          "lang": "js",
+          "content": "const id = 42;\ndb.query(\"SELECT * FROM t WHERE id = \" + id);\n"
+        }
+      ],
+      "expected": []
+    },
+    {
+      "name": "polyglot",
+      "files": [
+        {
+          "file": "app.py",
+          "lang": "py",
+          "content": "name = request.args.get(\"name\")\ncursor.execute(f\"SELECT * FROM users WHERE name = '{name}'\")\n"
+        },
+        {
+          "file": "shell_true.py",
+          "lang": "py",
+          "content": "cmd = request.args.get(\"cmd\")\nsubprocess.run(cmd, shell=True)\n"
+        },
+        {
+          "file": "shell_list.py",
+          "lang": "py",
+          "content": "cmd = request.args.get(\"cmd\")\nsubprocess.run([\"ls\", cmd])\n"
+        },
+        {
+          "file": "pycomment.py",
+          "lang": "py",
+          "content": "# os.system(request.args.get(\"x\"))\n"
+        },
+        {
+          "file": "main.go",
+          "lang": "go",
+          "content": "id := r.URL.Query().Get(\"id\")\nrows, _ := db.Query(\"SELECT * FROM t WHERE id = \" + id)\n"
+        },
+        {
+          "file": "index.php",
+          "lang": "php",
+          "content": "$id = $_GET['id'];\n$conn->query(\"SELECT * FROM t WHERE id = \" . $id);\n"
+        },
+        {
+          "file": "Ctl.java",
+          "lang": "java",
+          "content": "String id = request.getParameter(\"id\");\nstmt.executeQuery(\"SELECT * FROM t WHERE id = \" + id);\n"
+        },
+        {
+          "file": "run.sh",
+          "lang": "sh",
+          "content": "# eval(req.query.x)\necho done\n"
+        },
+        {
+          "file": "main.rs",
+          "lang": "rs",
+          "content": "let arg = std::env::args().nth(1).unwrap();\nCommand::new(arg).spawn();\n"
+        }
+      ],
+      "expected": [
+        {
+          "ruleId": "wide/taint-sql",
+          "cwe": "CWE-89",
+          "category": "INJECTION",
+          "severity": "CRITICAL",
+          "file": "app.py",
+          "line": 2,
+          "endLine": 2,
+          "message": "Tainted user input reaches a SQL execution sink without parameterization.",
+          "snippet": "cursor.execute(f\"SELECT * FROM users WHERE name = '{name}'\")",
+          "crossFile": false
+        },
+        {
+          "ruleId": "wide/taint-command",
+          "cwe": "CWE-78",
+          "category": "INJECTION",
+          "severity": "CRITICAL",
+          "file": "shell_true.py",
+          "line": 2,
+          "endLine": 2,
+          "message": "Tainted user input reaches an OS command execution sink.",
+          "snippet": "subprocess.run(cmd, shell=True)",
+          "crossFile": false
+        },
+        {
+          "ruleId": "wide/taint-sql",
+          "cwe": "CWE-89",
+          "category": "INJECTION",
+          "severity": "CRITICAL",
+          "file": "main.go",
+          "line": 2,
+          "endLine": 2,
+          "message": "Tainted user input reaches a SQL execution sink without parameterization.",
+          "snippet": "rows, _ := db.Query(\"SELECT * FROM t WHERE id = \" + id)",
+          "crossFile": false
+        },
+        {
+          "ruleId": "wide/taint-sql",
+          "cwe": "CWE-89",
+          "category": "INJECTION",
+          "severity": "CRITICAL",
+          "file": "index.php",
+          "line": 2,
+          "endLine": 2,
+          "message": "Tainted user input reaches a SQL execution sink without parameterization.",
+          "snippet": "$conn->query(\"SELECT * FROM t WHERE id = \" . $id);",
+          "crossFile": false
+        },
+        {
+          "ruleId": "wide/taint-command",
+          "cwe": "CWE-78",
+          "category": "INJECTION",
+          "severity": "CRITICAL",
+          "file": "main.rs",
+          "line": 2,
+          "endLine": 2,
+          "message": "Tainted user input reaches an OS command execution sink.",
+          "snippet": "Command::new(arg).spawn();",
+          "crossFile": false
+        }
+      ]
+    },
+    {
+      "name": "flows",
+      "files": [
+        {
+          "file": "lib/db.js",
+          "lang": "js",
+          "content": "export function findUser(name) {\n  return db.query(\"SELECT * FROM users WHERE name = '\" + name + \"'\");\n}\n"
+        },
+        {
+          "file": "routes/users.js",
+          "lang": "js",
+          "content": "import { findUser } from \"../lib/db.js\";\napp.get(\"/u\", (req, res) => {\n  findUser(req.query.name);\n});\n"
+        },
+        {
+          "file": "local.js",
+          "lang": "js",
+          "content": "const runCmd = async (cmd) => {\n  exec(\"sh -c \" + cmd);\n};\nconst c = req.body.c;\nrunCmd(c);\n"
+        },
+        {
+          "file": "tasks.py",
+          "lang": "py",
+          "content": "def run(cmd):\n    os.system(cmd)\n\n\ndef handler():\n    run(request.args.get(\"c\"))\n"
+        },
+        {
+          "file": "safe-call.js",
+          "lang": "js",
+          "content": "import { findUser } from \"./lib/db.js\";\nfindUser(\"admin\");\n"
+        }
+      ],
+      "expected": [
+        {
+          "ruleId": "wide/flow-cross-cwe-89",
+          "cwe": "CWE-89",
+          "category": "INJECTION",
+          "severity": "CRITICAL",
+          "file": "routes/users.js",
+          "line": 2,
+          "endLine": 4,
+          "message": "Cross-file taint flow: untrusted input passed to findUser() reaches CWE-89 sink at lib/db.js:2.",
+          "snippet": "app.get(\"/u\", (req, res) => { findUser(req.query.name); });",
+          "crossFile": true
+        },
+        {
+          "ruleId": "wide/flow-local-cwe-78",
+          "cwe": "CWE-78",
+          "category": "INJECTION",
+          "severity": "CRITICAL",
+          "file": "local.js",
+          "line": 5,
+          "endLine": 5,
+          "message": "Inter-procedural taint flow: untrusted input passed to runCmd() reaches CWE-78 sink at line 2.",
+          "snippet": "runCmd(c);",
+          "crossFile": false
+        },
+        {
+          "ruleId": "wide/flow-local-cwe-78",
+          "cwe": "CWE-78",
+          "category": "INJECTION",
+          "severity": "CRITICAL",
+          "file": "tasks.py",
+          "line": 6,
+          "endLine": 6,
+          "message": "Inter-procedural taint flow: untrusted input passed to run() reaches CWE-78 sink at line 2.",
+          "snippet": "run(request.args.get(\"c\"))",
+          "crossFile": false
+        }
+      ]
+    },
+    {
+      "name": "corpus-clean",
+      "files": [
+        {
+          "file": "clean/CleanService.java",
+          "lang": "java",
+          "content": "package com.example.clean;\n\nimport java.nio.file.Path;\nimport java.security.SecureRandom;\nimport java.sql.Connection;\nimport java.sql.PreparedStatement;\nimport java.sql.ResultSet;\nimport java.sql.SQLException;\nimport javax.xml.parsers.DocumentBuilderFactory;\nimport javax.xml.parsers.ParserConfigurationException;\n\npublic class SafeService {\n  private static final SecureRandom RANDOM = new SecureRandom();\n\n  public ResultSet findInvoice(Connection conn, String invoiceId, String tenantId) throws SQLException {\n    PreparedStatement stmt = conn.prepareStatement(\"SELECT id, total FROM invoices WHERE id = ? AND tenant_id = ?\");\n    stmt.setString(1, invoiceId);\n    stmt.setString(2, tenantId);\n    return stmt.executeQuery();\n  }\n\n  public Path resolveChild(Path rootDir, String filename) {\n    Path resolved = rootDir.toAbsolutePath().normalize().resolve(filename).normalize();\n    if (!resolved.startsWith(rootDir.toAbsolutePath().normalize())) {\n      throw new SecurityException(\"Traversal blocked\");\n    }\n    return resolved;\n  }\n\n  public DocumentBuilderFactory createSafeXmlFactory() throws ParserConfigurationException {\n    DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();\n    dbf.setFeature(\"http://apache.org/xml/features/disallow-doctype-decl\", true);\n    return dbf;\n  }\n\n  public byte[] nextTokenBytes() {\n    byte[] buf = new byte[32];\n    RANDOM.nextBytes(buf);\n    return buf;\n  }\n}\n"
+        },
+        {
+          "file": "clean/clean.go",
+          "lang": "go",
+          "content": "package clean\n\nimport (\n\t\"context\"\n\t\"crypto/rand\"\n\t\"crypto/subtle\"\n\t\"database/sql\"\n\t\"encoding/hex\"\n\t\"net/url\"\n\t\"os/exec\"\n)\n\nfunc QueryUserOrder(ctx context.Context, db *sql.DB, orderID string, ownerID string) *sql.Row {\n\treturn db.QueryRowContext(\n\t\tctx,\n\t\t\"SELECT id, amount FROM orders WHERE id = $1 AND owner_id = $2\",\n\t\torderID,\n\t\townerID,\n\t)\n}\n\nfunc RunGitRevision(ctx context.Context, rev string) ([]byte, error) {\n\tcmd := exec.CommandContext(ctx, \"git\", \"rev-parse\", \"--verify\", rev)\n\treturn cmd.Output()\n}\n\nfunc ValidateAllowedHost(rawURL string, allowed map[string]bool) (string, bool) {\n\tu, err := url.Parse(rawURL)\n\tif err != nil || u.Scheme != \"https\" {\n\t\treturn \"\", false\n\t}\n\tif !allowed[u.Hostname()] {\n\t\treturn \"\", false\n\t}\n\treturn u.String(), true\n}\n\nfunc GenerateRandomHex(n int) (string, error) {\n\tbuf := make([]byte, n)\n\tif _, err := rand.Read(buf); err != nil {\n\t\treturn \"\", err\n\t}\n\treturn hex.EncodeToString(buf), nil\n}\n\nfunc ConstantTimeCompare(a, b []byte) bool {\n\treturn subtle.ConstantTimeCompare(a, b) == 1\n}\n"
+        },
+        {
+          "file": "clean/clean.js",
+          "lang": "js",
+          "content": "import crypto from 'node:crypto';\nimport path from 'node:path';\nimport { execFile } from 'node:child_process';\n\nexport function buildSafeUserQuery(pool, orgId, limitRaw) {\n  const limit = Math.min(Math.max(Number(limitRaw || 20), 1), 100);\n  return pool.query('SELECT id, email, display_name FROM users WHERE org_id = $1 LIMIT $2', [orgId, limit]);\n}\n\nexport function copyPlainFields(target, payload) {\n  const safeTarget = Object.create(null);\n  for (const key of Object.keys(payload || {})) {\n    if (key === '__proto__' || key === 'constructor' || key === 'prototype') continue;\n    if (Object.hasOwn(payload, key)) {\n      Object.defineProperty(safeTarget, key, {\n        value: payload[key],\n        enumerable: true,\n        writable: true,\n        configurable: true\n      });\n    }\n  }\n  return Object.assign(target, safeTarget);\n}\n\nexport function resolveUploadFile(baseDir, untrustedName) {\n  const resolvedBase = path.resolve(baseDir);\n  const resolvedTarget = path.resolve(resolvedBase, String(untrustedName || ''));\n  const rel = path.relative(resolvedBase, resolvedTarget);\n  if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) {\n    throw new Error('Invalid upload path');\n  }\n  return resolvedTarget;\n}\n\nexport function runGitDiff(repoDir, revision) {\n  return new Promise((resolve, reject) => {\n    execFile('git', ['diff', '--stat', String(revision)], { cwd: repoDir }, (err, stdout) => {\n      if (err) reject(err);\n      else resolve(stdout);\n    });\n  });\n}\n\nexport function verifyWebhookSignature(secret, payload, providedHex) {\n  const digest = crypto.createHmac('sha256', secret).update(payload).digest();\n  const provided = Buffer.from(String(providedHex || ''), 'hex');\n  if (digest.length !== provided.length) return false;\n  return crypto.timingSafeEqual(digest, provided);\n}\n\nexport function parseOutboundHost(rawUrl, allowlist) {\n  const parsed = new URL(rawUrl);\n  if (parsed.protocol !== 'https:') return null;\n  return allowlist.includes(parsed.hostname) ? parsed.toString() : null;\n}\n\nexport function formatRoleLabel(user) {\n  const label = user.role === 'member' ? 'Member' : 'Guest';\n  return `<span class=\"badge\">${label}</span>`;\n}\n"
+        },
+        {
+          "file": "clean/clean.php",
+          "lang": "php",
+          "content": "<?php\n\nfunction findUserAccount(PDO $pdo, string $email, int $orgId): ?array {\n    $stmt = $pdo->prepare('SELECT id, role FROM users WHERE email = :email AND org_id = :org_id LIMIT 1');\n    $stmt->execute([':email' => $email, ':org_id' => $orgId]);\n    $row = $stmt->fetch(PDO::FETCH_ASSOC);\n    return $row ?: null;\n}\n\nfunction renderSafeHtml(string $value): string {\n    return htmlspecialchars($value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');\n}\n\nfunction generateNonceHex(): string {\n    return bin2hex(random_bytes(16));\n}\n\nfunction verifyWebhookToken(string $expected, string $provided): bool {\n    return hash_equals($expected, $provided);\n}\n\nfunction normalizeCallbackUpper(string $raw): string {\n    return preg_replace_callback('/([a-z]+)/i', fn ($m) => strtoupper($m[1]), $raw);\n}\n"
+        },
+        {
+          "file": "clean/clean.py",
+          "lang": "py",
+          "content": "import hashlib\nimport hmac\nimport os\nimport secrets\nimport subprocess\nimport yaml\n\n\ndef load_yaml_config(raw_yaml: str):\n    return yaml.safe_load(raw_yaml)\n\n\ndef fetch_user_orders(cursor, user_id: int, status: str):\n    cursor.execute(\n        \"SELECT id, total_cents FROM orders WHERE user_id = %s AND status = %s\",\n        (user_id, status),\n    )\n    return cursor.fetchall()\n\n\ndef safe_resolve_path(base_dir: str, rel_path: str) -> str:\n    base = os.path.realpath(base_dir)\n    target = os.path.realpath(os.path.join(base, rel_path))\n    if os.path.commonpath([base, target]) != base:\n        raise ValueError(\"Path escapes base directory\")\n    return target\n\n\ndef run_git_status(workspace_root: str) -> str:\n    completed = subprocess.run(\n        [\"git\", \"status\", \"--short\"],\n        cwd=workspace_root,\n        capture_output=True,\n        text=True,\n        check=True,\n    )\n    return completed.stdout\n\n\ndef create_session_token() -> str:\n    return secrets.token_urlsafe(32)\n\n\ndef verify_digest(expected_hex: str, payload: bytes, secret: bytes) -> bool:\n    computed = hmac.new(secret, payload, hashlib.sha256).hexdigest()\n    return hmac.compare_digest(computed, expected_hex)\n"
+        },
+        {
+          "file": "clean/clean.tf",
+          "lang": "tf",
+          "content": "resource \"aws_s3_bucket_acl\" \"private_data\" {\n  bucket = \"internal-audit-bucket\"\n  acl    = \"private\"\n}\n\nresource \"aws_security_group_rule\" \"internal_ssh\" {\n  type        = \"ingress\"\n  from_port   = 22\n  to_port     = 22\n  protocol    = \"tcp\"\n  cidr_blocks = [\"10.0.0.0/8\"]\n}\n"
+        },
+        {
+          "file": "clean/clean.ts",
+          "lang": "ts",
+          "content": "import { createHash, randomBytes } from 'node:crypto';\nimport { readFileSync } from 'node:fs';\nimport { resolve, sep } from 'node:path';\n\nexport interface SessionClaim {\n  readonly sub: string;\n  readonly orgId: string;\n}\n\nexport function hashApiToken(token: string): string {\n  return createHash('sha256').update(token).digest('hex');\n}\n\nexport function generateNonceHex(byteLength = 16): string {\n  return randomBytes(byteLength).toString('hex');\n}\n\nexport function readScopedAsset(rootDir: string, relFile: string): string {\n  const base = resolve(rootDir);\n  const full = resolve(base, relFile);\n  if (full !== base && !full.startsWith(base + sep)) {\n    throw new Error('Path outside asset root');\n  }\n  return readFileSync(full, 'utf8');\n}\n\nexport function sanitizeRedirectTarget(rawPath: string): string {\n  const candidate = String(rawPath || '/');\n  if (!candidate.startsWith('/') || candidate.startsWith('//')) {\n    return '/dashboard';\n  }\n  const u = new URL(candidate, 'https://app.example.com');\n  return u.pathname + u.search;\n}\n\nexport function isAuthorizedClaim(claim: SessionClaim | null, expectedOrgId: string): boolean {\n  if (!claim) return false;\n  return Boolean(claim.sub && claim.orgId && claim.orgId === expectedOrgId);\n}\n"
+        },
+        {
+          "file": "clean/clean.yml",
+          "lang": "yml",
+          "content": "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: web-api\nspec:\n  replicas: 2\n  template:\n    spec:\n      securityContext:\n        runAsNonRoot: true\n        seccompProfile:\n          type: RuntimeDefault\n      containers:\n        - name: app\n          image: ghcr.io/example/web-api:1.4.2\n          env:\n            - name: DATABASE_SSLMODE\n              value: verify-full\n          securityContext:\n            allowPrivilegeEscalation: false\n            readOnlyRootFilesystem: true\n            capabilities:\n              drop:\n                - ALL\n"
+        }
+      ],
+      "expected": []
+    },
+    {
+      "name": "corpus-vulnerable",
+      "files": [
+        {
+          "file": "vulnerable/VulnService.java",
+          "lang": "java",
+          "content": "package com.example.vuln;\n\nimport java.io.File;\nimport java.sql.Connection;\nimport java.sql.Statement;\nimport javax.servlet.http.HttpServletRequest;\n\npublic class VulnService {\n    public void unsafeQuery(Connection conn, HttpServletRequest req) throws Exception {\n        String user = req.getParameter(\"user\");\n        Statement stmt = conn.createStatement();\n        stmt.executeQuery(\"SELECT * FROM accounts WHERE username = '\" + user + \"'\");\n    }\n\n    public void unsafeExec(HttpServletRequest req) throws Exception {\n        String host = req.getParameter(\"host\");\n        Runtime.getRuntime().exec(\"ping -c 1 \" + host);\n    }\n\n    public boolean badPathCheck(File baseDir, File targetFile) throws Exception {\n        return targetFile.getCanonicalPath().startsWith(baseDir.getCanonicalPath());\n    }\n}\n"
+        },
+        {
+          "file": "vulnerable/cross_sink.js",
+          "lang": "js",
+          "content": "export function runUserQuery(pool, targetName) {\n  return pool.query(\"SELECT * FROM accounts WHERE owner = '\" + targetName + \"'\");\n}\n\nexport function runCommandHelper(childProc, rawArg) {\n  return childProc.exec(\"ls -la \" + rawArg);\n}\n"
+        },
+        {
+          "file": "vulnerable/vuln.go",
+          "lang": "go",
+          "content": "package main\n\nimport (\n\t\"crypto/tls\"\n\t\"database/sql\"\n\t\"net/http\"\n\t\"os/exec\"\n)\n\nfunc handleRequest(db *sql.DB, r *http.Request) {\n\tq := r.URL.Query().Get(\"name\")\n\tdb.Query(\"SELECT id FROM users WHERE name = '\" + q + \"'\")\n\tcmd := exec.Command(\"sh\", \"-c\", \"echo \"+q)\n\t_ = cmd.Run()\n\ttr := &http.Transport{\n\t\tTLSClientConfig: &tls.Config{InsecureSkipVerify: true},\n\t}\n\t_ = tr\n}\n"
+        },
+        {
+          "file": "vulnerable/vuln.js",
+          "lang": "js",
+          "content": "import { runUserQuery } from \"./cross_sink.js\";\n\nexport async function handleSearch(req, res, pool) {\n  const rawName = req.query.name;\n  const rows = await runUserQuery(pool, rawName);\n  res.json(rows);\n}\n\nexport async function createOrder(req, orders) {\n  return orders.create({ itemId: req.body.itemId, price: req.body.price });\n}\n\nexport function decodeSession(token) {\n  return jwt.decode(token);\n}\n\nexport function registerAdminRoutes(app) {\n  app.delete(\"/api/admin/users/:id\", async (req, res) => res.json({ deleted: req.params.id }));\n}\n\nexport async function juiceShopNosqlAndSsrf(req, User, axios) {\n  const filter = req.query.filter;\n  await User.find({ $where: `this.username === '${filter}'` });\n  const targetUrl = req.body.webhookUrl;\n  return axios.get(targetUrl);\n}\n"
+        },
+        {
+          "file": "vulnerable/vuln.php",
+          "lang": "php",
+          "content": "<?php\n$cmd = $_GET['ip'];\nsystem(\"ping -c 4 \" . $cmd);\n\n$id = $_POST['id'];\n$res = mysqli_query($conn, \"SELECT * FROM users WHERE id = \" . $id);\n\n$raw = $_COOKIE['session_payload'];\n$obj = unserialize($raw);\n?>\n"
+        },
+        {
+          "file": "vulnerable/vuln.py",
+          "lang": "py",
+          "content": "import pickle\nimport subprocess\nimport yaml\nimport jwt\n\n@app.post(\"/admin/promote\")\ndef promote_user(user_id: str, raw_cfg: str, raw_blob: bytes, cursor):\n    payload = jwt.decode(user_id, options={\"verify_signature\": False})\n    parsed = yaml.load(raw_cfg, Loader=yaml.Loader)\n    obj = pickle.loads(raw_blob)\n    cursor.execute(f\"UPDATE users SET role = 'admin' WHERE id = '{user_id}'\")\n    cmd = f\"id {user_id}\"\n    return subprocess.run(cmd, shell=True)\n"
+        },
+        {
+          "file": "vulnerable/vuln.tf",
+          "lang": "tf",
+          "content": "resource \"aws_s3_bucket_acl\" \"bad_acl\" {\n  bucket = \"leaked-assets\"\n  acl    = \"public-read\"\n}\n\nresource \"aws_security_group_rule\" \"open_world\" {\n  type        = \"ingress\"\n  from_port   = 22\n  to_port     = 22\n  protocol    = \"tcp\"\n  cidr_blocks = [\"0.0.0.0/0\"]\n}\n"
+        },
+        {
+          "file": "vulnerable/vuln.yml",
+          "lang": "yml",
+          "content": "on:\n  pull_request_target:\npermissions: write-all\njobs:\n  ci:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n        with:\n          ref: ${{ github.event.pull_request.head.sha }}\n      - run: echo \"${{ github.event.issue.title }}\"\n      - uses: thirdparty/scanner-action@v1\n      - name: pod\n        env:\n          privileged: true\n"
+        }
+      ],
+      "expected": [
+        {
+          "ruleId": "wide/taint-sql",
+          "cwe": "CWE-89",
+          "category": "INJECTION",
+          "severity": "CRITICAL",
+          "file": "vulnerable/vuln.go",
+          "line": 12,
+          "endLine": 12,
+          "message": "Tainted user input reaches a SQL execution sink without parameterization.",
+          "snippet": "db.Query(\"SELECT id FROM users WHERE name = '\" + q + \"'\")",
+          "crossFile": false
+        },
+        {
+          "ruleId": "wide/taint-ssrf",
+          "cwe": "CWE-918",
+          "category": "NETWORK",
+          "severity": "HIGH",
+          "file": "vulnerable/vuln.js",
+          "line": 25,
+          "endLine": 25,
+          "message": "Tainted user input controls the target URL of an outbound network request.",
+          "snippet": "return axios.get(targetUrl);",
+          "crossFile": false
+        },
+        {
+          "ruleId": "wide/taint-code-exec",
+          "cwe": "CWE-94",
+          "category": "INJECTION",
+          "severity": "CRITICAL",
+          "file": "vulnerable/vuln.php",
+          "line": 9,
+          "endLine": 9,
+          "message": "Tainted user input reaches dynamic code or template evaluation.",
+          "snippet": "$obj = unserialize($raw);",
+          "crossFile": false
+        },
+        {
+          "ruleId": "wide/flow-cross-cwe-89",
+          "cwe": "CWE-89",
+          "category": "INJECTION",
+          "severity": "CRITICAL",
+          "file": "vulnerable/vuln.js",
+          "line": 5,
+          "endLine": 5,
+          "message": "Cross-file taint flow: untrusted input passed to runUserQuery() reaches CWE-89 sink at vulnerable/cross_sink.js:2.",
+          "snippet": "const rows = await runUserQuery(pool, rawName);",
+          "crossFile": true
+        }
+      ]
+    }
+  ],
+  "secrets": [
+    {
+      "file": "config.js",
+      "line": "const awsKey = \"AKIAIOSFODNN7ABCDEFG\";",
+      "expected": true
+    },
+    {
+      "file": "config.js",
+      "line": "const gh = \"ghp_9xK2mP7qR4tV8wZ1aB3cD5eF6gH8jL0nM2q\";",
+      "expected": true
+    },
+    {
+      "file": "config.js",
+      "line": "headers: { Authorization: \"token \" + \"ghp_9xK2mP7qR4tV8wZ1aB3cD5eF6gH8jL0nM2q\" }",
+      "expected": true
+    },
+    {
+      "file": "config.js",
+      "line": "const pair = \"user:pw\"; const k = \"AKIAIOSFODNN7ABCDEFG\";",
+      "expected": true
+    },
+    {
+      "file": "config.js",
+      "line": "const apiKey = \"EXAMPLE_YOUR_API_KEY_HERE\";",
+      "expected": false
+    },
+    {
+      "file": "config.js",
+      "line": "const apiKey = \"aaaaaaaaaaaaaaaaaaaa\";",
+      "expected": false
+    },
+    {
+      "file": "config.js",
+      "line": "const apiKey = process.env.API_KEY;",
+      "expected": false
+    },
+    {
+      "file": "config.py",
+      "line": "API_KEY = os.environ[\"API_KEY\"]",
+      "expected": false
+    },
+    {
+      "file": "workflow.yml",
+      "line": "token: ${{ secrets.GITHUB_TOKEN }}",
+      "expected": false
+    },
+    {
+      "file": "config.js",
+      "line": "const secret = \"Zx9!qL2#vB7@nM4$kP8%tR1^\";",
+      "expected": true
+    },
+    {
+      "file": "config.js",
+      "line": "const password = \"changeme-please\";",
+      "expected": false
+    },
+    {
+      "file": "config.js",
+      "line": "const slackToken = \"xoxb-1234567890-abcdefghij\";",
+      "expected": true
+    },
+    {
+      "file": "config.js",
+      "line": "const openai = \"sk-proj-abcdefghijklmnopqrstuvwxyz012345\";",
+      "expected": true
+    },
+    {
+      "file": "tests/config.test.js",
+      "line": "const secret = \"aabbccddeeffgghh\";",
+      "expected": false
+    },
+    {
+      "file": "src/config.js",
+      "line": "const secret = \"aabbccddeeffgghh\";",
+      "expected": true
+    },
+    {
+      "file": "tests/test_config.py",
+      "line": "secret = \"aabbccddeeffgghh\"",
+      "expected": false
+    },
+    {
+      "file": "app/test_config.py",
+      "line": "secret = \"aabbccddeeffgghh\"",
+      "expected": false
+    },
+    {
+      "file": "app/test_data/config.py",
+      "line": "secret = \"aabbccddeeffgghh\"",
+      "expected": true
+    },
+    {
+      "file": "config.js",
+      "line": "const key = \"-----BEGIN RSA PRIVATE KEY-----\";",
+      "expected": true
+    },
+    {
+      "file": "config.js",
+      "line": "",
+      "expected": false
+    },
+    {
+      "file": "config.js",
+      "line": "const token = \"<API_TOKEN>\";",
+      "expected": false
+    },
+    {
+      "file": "config.js",
+      "line": "const token = \"dummy-ghp_9xK2mP7qR4tV8wZ1aB3cD5eF6gH8jL0nM2q\";",
+      "expected": false
+    },
+    {
+      "file": "clean/clean.js",
+      "line": "    if (key === '__proto__' || key === 'constructor' || key === 'prototype') continue;",
+      "expected": true
+    },
+    {
+      "file": "clean/clean.js",
+      "line": "        value: payload[key],",
+      "expected": true
+    },
+    {
+      "file": "clean/clean.js",
+      "line": "  const digest = crypto.createHmac('sha256', secret).update(payload).digest();",
+      "expected": true
+    },
+    {
+      "file": "clean/clean.php",
+      "line": "function verifyWebhookToken(string $expected, string $provided): bool {",
+      "expected": true
+    },
+    {
+      "file": "clean/clean.py",
+      "line": "def create_session_token() -> str:",
+      "expected": true
+    },
+    {
+      "file": "clean/clean.py",
+      "line": "def verify_digest(expected_hex: str, payload: bytes, secret: bytes) -> bool:",
+      "expected": true
+    },
+    {
+      "file": "clean/clean.py",
+      "line": "    computed = hmac.new(secret, payload, hashlib.sha256).hexdigest()",
+      "expected": true
+    },
+    {
+      "file": "clean/clean.ts",
+      "line": "export function hashApiToken(token: string): string {",
+      "expected": true
+    },
+    {
+      "file": "clean/clean.ts",
+      "line": "  return createHash('sha256').update(token).digest('hex');",
+      "expected": true
+    }
+  ]
+}

@@ -105,7 +105,7 @@ def _is_comment_line(text: str, lang: str) -> bool:
         return True
     if t.startswith("//") or t.startswith("/*") or t.startswith("* ") or t == "*" or t.startswith("<!--"):
         return True
-    if lang in ("py", "rb", "yaml", "yml", "tf", "hcl") and t.startswith("#"):
+    if lang in ("py", "rb", "yaml", "yml", "tf", "hcl", "sh") and t.startswith("#"):
         return True
     return False
 
@@ -516,7 +516,15 @@ KNOWN_SECRET_PREFIX_RE = re.compile(
     r"^(?:AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,}|"
     r"AIza[0-9A-Za-z\-_]{30,}|sk-(?:proj-|ant-)?[A-Za-z0-9\-_]{20,}|xox[baprs]-[0-9A-Za-z-]{10,}|-----BEGIN [A-Z ]*PRIVATE KEY-----)"
 )
+KNOWN_TOKEN_INLINE_RE = re.compile(
+    r"\b(AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,}|"
+    r"AIza[0-9A-Za-z\-_]{30,}|sk-(?:proj-|ant-)?[A-Za-z0-9\-_]{20,}|xox[baprs]-[0-9A-Za-z-]{10,}|-----BEGIN [A-Z ]*PRIVATE KEY-----)"
+)
 KNOWN_PREFIX_DUMMY_RE = re.compile(r"(?:example|dummy|placeholder|your[_-]|changeme|replace[_-]?me|xxxxxx|000000)", re.IGNORECASE)
+TEST_PATH_RE = re.compile(
+    r"(?:^|[/\\])(?:test|tests|__tests__|spec|specs|fixtures?|mocks?)(?:[/\\]|$)|\.(?:test|spec)\.[jt]sx?$|(?:^|[/\\])test_[^/\\]*\.py$",
+    re.IGNORECASE,
+)
 PLACEHOLDER_RE = re.compile(
     r"(?:example|sample|dummy|placeholder|your[_-]|changeme|replace[_-]?me|test[_-]?(?:key|token|secret)|fake|redacted|localhost|000000|123456|xxxxxx|\$\{\{?|<[A-Z0-9_]+>)",
     re.IGNORECASE,
@@ -537,17 +545,21 @@ def shannon_entropy(value: str) -> float:
     return entropy
 
 
+def contains_known_token(line_text: str) -> bool:
+    return bool(KNOWN_TOKEN_INLINE_RE.search(str(line_text or "")))
+
+
 def is_likely_real_secret(line_text: str, file_path: str = "") -> bool:
     line = str(line_text or "")
     if not line.strip():
         return False
     if re.search(r"process\.env\.|os\.environ|import\.meta\.env\.|\$\{\{?\s*secrets\.", line, re.IGNORECASE):
         return False
-    is_test_file = bool(re.search(r"(?:^|[/\\])(?:test|tests|__tests__|spec|specs|fixtures?|mocks?)(?:[/\\]|$)|test_.*\.py$|\.(?:test|spec)\.[jt]sx?$", file_path, re.IGNORECASE))
+    is_test_file = bool(TEST_PATH_RE.search(file_path or ""))
     m = re.search(r'["\'`]([^"\'`\r\n]{8,})["\'`]', line) or re.search(r"[:=]\s*([A-Za-z0-9_+/=-]{12,})", line)
     candidate = m.group(1).strip() if m else line.strip()
 
-    if KNOWN_SECRET_PREFIX_RE.search(candidate) or KNOWN_SECRET_PREFIX_RE.search(line):
+    if KNOWN_SECRET_PREFIX_RE.search(candidate) or KNOWN_SECRET_PREFIX_RE.search(line) or KNOWN_TOKEN_INLINE_RE.search(line):
         return not bool(KNOWN_PREFIX_DUMMY_RE.search(candidate))
     if PLACEHOLDER_RE.search(candidate):
         return False

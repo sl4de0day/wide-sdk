@@ -700,7 +700,7 @@ class BrowserController:
         self._pw_browser: Any = None
         self._pw_context: Any = None
         self._pw_page: Any = None
-        self._user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Wide/0.6191126"
+        self._user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Wide/0.7211126"
 
     def __enter__(self) -> "BrowserController":
         return self
