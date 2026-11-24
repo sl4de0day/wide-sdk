@@ -74,8 +74,11 @@ def _search_files_handler(params: Dict[str, Any], context: Dict[str, Any]) -> To
             return ToolResult(success=False, output="", error=f"Invalid search pattern: {exc}")
 
         matches: List[str] = []
-        basename_filter = glob_filter[3:] if glob_filter.startswith("**/") else glob_filter
-        match_full_rel = "/" in glob_filter and not glob_filter.startswith("**/")
+        glob_pattern = glob_filter
+        escaped = re.escape(glob_pattern)
+        escaped = escaped.replace(r"\*\*/", "(?:.*/)?").replace(r"\*\*", ".*").replace(r"\*", "[^/]*").replace(r"\?", "[^/]")
+        glob_re = re.compile(f"^{escaped}$")
+        match_basename_only = "/" not in glob_pattern
 
         for root, dirs, files in os.walk(root_path):
             dirs[:] = sorted(d for d in dirs if d not in _IGNORE_DIRS)
@@ -83,9 +86,7 @@ def _search_files_handler(params: Dict[str, Any], context: Dict[str, Any]) -> To
                 item = Path(root) / fname
                 rel = item.relative_to(root_path)
                 rel_posix = rel.as_posix()
-                matched = fnmatch.fnmatch(rel_posix, glob_filter) if match_full_rel else (
-                    fnmatch.fnmatch(fname, basename_filter) or fnmatch.fnmatch(rel_posix, glob_filter)
-                )
+                matched = bool(glob_re.match(fname if match_basename_only else rel_posix))
                 if not matched:
                     continue
 

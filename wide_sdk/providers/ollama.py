@@ -69,13 +69,12 @@ class OllamaProvider(BaseProvider):
         content = msg.get("content", "")
         tool_calls: List[ToolCall] = []
 
-        if "tool_calls" in msg:
-            for tc in msg["tool_calls"]:
-                fn = tc.get("function", {})
-                tool_calls.append(ToolCall(
-                    id=f"call_{len(tool_calls)}",
-                    name=fn.get("name", ""),
-                    arguments=fn.get("arguments", {})
-                ))
+        for tc in (msg.get("tool_calls") or []):
+            fn = tc.get("function", {})
+            tool_calls.append(ToolCall(
+                id=f"call_{len(tool_calls)}",
+                name=fn.get("name", ""),
+                arguments=fn.get("arguments", {})
+            ))
 
         return content, (tool_calls if tool_calls else None)

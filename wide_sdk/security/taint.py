@@ -248,7 +248,7 @@ def analyze_file_taint(
                 continue
             if cwe == "CWE-78" and re.search(r"\b(?:execFile|spawn|spawnSync)\s*\([^,]+,\s*\[", span_text):
                 continue
-            if cwe == "CWE-78" and re.search(r"\bsubprocess\.run\s*\(\s*\[", span_text) and "shell=True" not in span_text and "shell = True" not in span_text:
+            if cwe == "CWE-78" and re.search(r"\bsubprocess\.run\s*\(\s*\[", span_text) and not re.search(r"shell\s*=\s*True", span_text):
                 continue
             if cwe == "CWE-79" and re.search(r"\bres\.send\s*\(", span_text):
                 if not (re.search(r"<[a-zA-Z/]|text/html", span_text) and re.search(r"\+\s*[A-Za-z_$]|\$\{", span_text)):
@@ -517,8 +517,8 @@ KNOWN_SECRET_PREFIX_RE = re.compile(
     r"AIza[0-9A-Za-z\-_]{30,}|sk-(?:proj-|ant-)?[A-Za-z0-9\-_]{20,}|xox[baprs]-[0-9A-Za-z-]{10,}|-----BEGIN [A-Z ]*PRIVATE KEY-----)"
 )
 KNOWN_TOKEN_INLINE_RE = re.compile(
-    r"\b(AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,}|"
-    r"AIza[0-9A-Za-z\-_]{30,}|sk-(?:proj-|ant-)?[A-Za-z0-9\-_]{20,}|xox[baprs]-[0-9A-Za-z-]{10,}|-----BEGIN [A-Z ]*PRIVATE KEY-----)"
+    r"(?:\b(?:AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,}|"
+    r"AIza[0-9A-Za-z\-_]{30,}|sk-(?:proj-|ant-)?[A-Za-z0-9\-_]{20,}|xox[baprs]-[0-9A-Za-z-]{10,})|-----BEGIN [A-Z ]*PRIVATE KEY-----)"
 )
 KNOWN_PREFIX_DUMMY_RE = re.compile(r"(?:example|dummy|placeholder|your[_-]|changeme|replace[_-]?me|xxxxxx|000000)", re.IGNORECASE)
 TEST_PATH_RE = re.compile(

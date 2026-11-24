@@ -24,14 +24,19 @@ class ClaudeProvider(BaseProvider):
         anthropic_messages = []
         for m in chat_msgs:
             if m.role == "tool":
-                anthropic_messages.append({
-                    "role": "user",
-                    "content": [{
-                        "type": "tool_result",
-                        "tool_use_id": m.tool_call_id or "tool_call",
-                        "content": m.content
-                    }]
-                })
+                block = {
+                    "type": "tool_result",
+                    "tool_use_id": m.tool_call_id or "tool_call",
+                    "content": m.content
+                }
+                if (
+                    anthropic_messages
+                    and anthropic_messages[-1]["role"] == "user"
+                    and isinstance(anthropic_messages[-1]["content"], list)
+                ):
+                    anthropic_messages[-1]["content"].append(block)
+                else:
+                    anthropic_messages.append({"role": "user", "content": [block]})
             elif m.role == "assistant" and m.tool_calls:
                 blocks = []
                 if m.content:

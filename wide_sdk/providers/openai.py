@@ -91,19 +91,18 @@ class OpenAICompatibleProvider(BaseProvider):
         content = msg.get("content") or ""
         tool_calls: List[ToolCall] = []
 
-        if "tool_calls" in msg:
-            for tc in msg["tool_calls"]:
-                fn = tc.get("function", {})
-                args = {}
-                try:
-                    args = json.loads(fn.get("arguments", "{}"))
-                except Exception:
-                    pass
-                tool_calls.append(ToolCall(
-                    id=tc.get("id", f"call_{len(tool_calls)}"),
-                    name=fn.get("name", ""),
-                    arguments=args
-                ))
+        for tc in (msg.get("tool_calls") or []):
+            fn = tc.get("function", {})
+            args = {}
+            try:
+                args = json.loads(fn.get("arguments", "{}"))
+            except Exception:
+                pass
+            tool_calls.append(ToolCall(
+                id=tc.get("id", f"call_{len(tool_calls)}"),
+                name=fn.get("name", ""),
+                arguments=args
+            ))
 
         return content, (tool_calls if tool_calls else None)
 

@@ -3,12 +3,14 @@ import base64
 import hashlib
 import json
 import os
+import queue
 import re
 import shutil
 import socket
 import struct
 import subprocess
 import tempfile
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -345,14 +347,30 @@ class _SimpleCDPClient:
             ws_base_url = ""
             deadline = time.time() + 15.0
             assert self.proc.stderr is not None
+            stderr_queue: "queue.Queue[Optional[bytes]]" = queue.Queue()
+            stderr_stream = self.proc.stderr
+
+            def _read_stderr() -> None:
+                try:
+                    for raw_line in iter(stderr_stream.readline, b""):
+                        stderr_queue.put(raw_line)
+                except Exception:
+                    pass
+                finally:
+                    stderr_queue.put(None)
+
+            threading.Thread(target=_read_stderr, daemon=True).start()
             stderr_acc = ""
             while time.time() < deadline:
-                line_bytes = self.proc.stderr.readline()
-                if not line_bytes:
+                remaining = max(0.05, deadline - time.time())
+                try:
+                    line_bytes = stderr_queue.get(timeout=min(0.25, remaining))
+                except queue.Empty:
                     if self.proc.poll() is not None:
                         break
-                    time.sleep(0.05)
                     continue
+                if line_bytes is None:
+                    break
                 stderr_acc += line_bytes.decode("utf-8", errors="replace")
                 m = _DEVTOOLS_WS_RE.search(stderr_acc)
                 if m:
@@ -700,7 +718,7 @@ class BrowserController:
         self._pw_browser: Any = None
         self._pw_context: Any = None
         self._pw_page: Any = None
-        self._user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Wide/0.7211126"
+        self._user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Wide/0.8241126"
 
     def __enter__(self) -> "BrowserController":
         return self
@@ -989,14 +1007,17 @@ class BrowserController:
 
         if mode == "cdp" and self._cdp is not None:
             try:
+                prev_url = str(self._cdp.eval_value("window.location.href") or "")
                 self._cdp.load_fired = False
                 self._cdp.send("Page.navigate", {"url": url})
                 deadline = time.time() + float(self.timeout)
                 while not self._cdp.load_fired and time.time() < deadline:
+                    cur_url = str(self._cdp.eval_value("window.location.href") or "")
                     ready = self._cdp.eval_value("document.readyState")
-                    if ready in ("complete", "interactive"):
-                        break
-                    time.sleep(0.1)
+                    if (cur_url and cur_url != prev_url or prev_url == url) and ready in ("complete", "interactive"):
+                        if cur_url != "about:blank" or url == "about:blank":
+                            break
+                    time.sleep(0.08)
                 time.sleep(0.15)
                 self.state.history.append(url)
                 self.form_inputs.clear()

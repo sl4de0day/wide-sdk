@@ -34,10 +34,17 @@ class GeminiProvider(BaseProvider):
                         parts.append({"functionCall": {"name": tc.name, "args": tc.arguments}})
                 contents.append({"role": "model", "parts": parts})
             elif m.role == "tool":
-                contents.append({
-                    "role": "user",
-                    "parts": [{"functionResponse": {"name": m.name or "tool_result", "response": {"output": m.content}}}]
-                })
+                part = {"functionResponse": {"name": m.name or "tool_result", "response": {"output": m.content}}}
+                if (
+                    contents
+                    and contents[-1]["role"] == "user"
+                    and isinstance(contents[-1].get("parts"), list)
+                    and contents[-1]["parts"]
+                    and "functionResponse" in contents[-1]["parts"][0]
+                ):
+                    contents[-1]["parts"].append(part)
+                else:
+                    contents.append({"role": "user", "parts": [part]})
 
         function_declarations = [
             {

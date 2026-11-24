@@ -41,7 +41,7 @@ class TestAgentRules(unittest.TestCase):
         rules = load_agent_rules(workspace_dir=str(self.root))
         instructions = build_agent_instructions(rules)
         self.assertIn("Do not use emojis", instructions)
-        clean = sanitize_output("Hello 😀⭐ℹ️1️⃣👨‍💻🇷🇺 World", rules)
+        clean = sanitize_output("Hello \U0001F600\u2B50\u2139\uFE0F1\uFE0F\u20E3\U0001F468\u200D\U0001F4BB\U0001F1F7\U0001F1FA World", rules)
         self.assertEqual(clean, "Hello  World")
 
     def test_partial_rules_bundle_merges_no_emojis(self) -> None:
@@ -60,7 +60,7 @@ class TestAgentRules(unittest.TestCase):
         ]), encoding="utf-8")
         rules = load_agent_rules(workspace_dir=str(self.root))
         self.assertIn("wide/ai-no-emojis", [r.id for r in rules])
-        self.assertEqual(sanitize_output("Status ✅ Done 1️⃣", rules), "Status  Done ")
+        self.assertEqual(sanitize_output("Status \u2705 Done 1\uFE0F\u20E3", rules), "Status  Done ")
 
     def test_agent_rules_path(self) -> None:
         info = get_agent_rules_path(workspace_dir=str(self.root))

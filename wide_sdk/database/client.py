@@ -602,7 +602,9 @@ class DatabaseClient:
             self._record_history(sql, int((time.monotonic() - start) * 1000), 0, error=msg)
             if type(exc) is Exception:
                 raise Exception(msg) from None
-            raise type(exc)(msg) from None if isinstance(exc, (PermissionError, ValueError)) else exc
+            if isinstance(exc, (PermissionError, ValueError)):
+                raise type(exc)(msg) from None
+            raise RuntimeError(msg) from None
 
     def export_query(
         self,

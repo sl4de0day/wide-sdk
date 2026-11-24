@@ -149,6 +149,13 @@ def fuzz_endpoint(
             baseline_status = resp.status
             baseline_body = resp.read().decode("utf-8", errors="replace")
         baseline_elapsed_ms = int((time.monotonic() - t0) * 1000)
+    except urllib.error.HTTPError as e:
+        baseline_status = e.code
+        try:
+            baseline_body = e.read().decode("utf-8", errors="replace")
+        except Exception:
+            baseline_body = ""
+        baseline_elapsed_ms = int((time.monotonic() - t0) * 1000)
     except Exception as e:
         raise RuntimeError(f"Baseline probe failed for {url}: {str(e)}")
 

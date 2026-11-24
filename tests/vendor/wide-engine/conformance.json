@@ -259,6 +259,11 @@
           "content": "cmd = request.args.get(\"cmd\")\nsubprocess.run(cmd, shell=True)\n"
         },
         {
+          "file": "shell_true_space.py",
+          "lang": "py",
+          "content": "cmd = request.args.get(\"cmd\")\nsubprocess.run([cmd], shell= True)\n"
+        },
+        {
           "file": "shell_list.py",
           "lang": "py",
           "content": "cmd = request.args.get(\"cmd\")\nsubprocess.run([\"ls\", cmd])\n"
@@ -317,6 +322,18 @@
           "endLine": 2,
           "message": "Tainted user input reaches an OS command execution sink.",
           "snippet": "subprocess.run(cmd, shell=True)",
+          "crossFile": false
+        },
+        {
+          "ruleId": "wide/taint-command",
+          "cwe": "CWE-78",
+          "category": "INJECTION",
+          "severity": "CRITICAL",
+          "file": "shell_true_space.py",
+          "line": 2,
+          "endLine": 2,
+          "message": "Tainted user input reaches an OS command execution sink.",
+          "snippet": "subprocess.run([cmd], shell= True)",
           "crossFile": false
         },
         {
@@ -661,6 +678,11 @@
     {
       "file": "config.js",
       "line": "const key = \"-----BEGIN RSA PRIVATE KEY-----\";",
+      "expected": true
+    },
+    {
+      "file": "config.py",
+      "line": "  -----BEGIN PRIVATE KEY-----",
       "expected": true
     },
     {
